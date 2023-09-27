@@ -159,8 +159,11 @@ class Exporter:
             raise ValueError(f"Invalid export format='{format}'. Valid formats are {fmts}")
         jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle, ncnn = flags  # export booleans
 
+        self.args.device = "cpu"
+        print("if self.args.device: ", self.args.device)
         # Load PyTorch model
         self.device = select_device('cpu' if self.args.device is None else self.args.device)
+        print("self.device: ",self.device)
 
         # Checks
         model.names = check_class_names(model.names)
@@ -197,6 +200,11 @@ class Exporter:
             elif isinstance(m, C2f) and not any((saved_model, pb, tflite, edgetpu, tfjs)):
                 # EdgeTPU does not support FlexSplitV while split provides cleaner ONNX graph
                 m.forward = m.forward_split
+
+        for i, (name, p) in enumerate(model.named_parameters()):
+            print("p: ",p.shape)
+            print("p 000: ",p[0][0][0])
+            break
 
         y = None
         for _ in range(2):
@@ -294,6 +302,7 @@ class Exporter:
             from torch.utils.mobile_optimizer import optimize_for_mobile
             optimize_for_mobile(ts)._save_for_lite_interpreter(str(f), _extra_files=extra_files)
         else:
+            print("save as this")
             ts.save(str(f), _extra_files=extra_files)
         return f, None
 
@@ -985,7 +994,7 @@ class iOSDetectModel(torch.nn.Module):
 
 def export(cfg=DEFAULT_CFG):
     """Export a YOLOv model to a specific format."""
-    cfg.model = cfg.model or 'yolov8n.yaml'
+    cfg.model = 'yolov8s-pose.pt'#cfg.model or 'yolov8n.yaml'
     cfg.format = cfg.format or 'torchscript'
 
     from ultralytics import YOLO

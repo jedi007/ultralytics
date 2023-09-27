@@ -132,9 +132,22 @@ class BasePredictor:
             img /= 255  # 0 - 255 to 0.0 - 1.0
         return img
 
+    def model_info(model, verbose=True, img_size=640):
+        # Model information. img_size may be int or list, i.e. img_size=640 or img_size=[640, 320]
+        if verbose:
+            print('%5s %40s %9s %12s %20s %10s %10s' % ('layer', 'name', 'gradient', 'parameters', 'shape', 'mu', 'sigma'))
+            for i, (name, p) in enumerate(model.named_parameters()):
+                name = name.replace('module_list.', '')
+                print('%5g %40s %9s %12g %20s %10.3g %10.3g' %
+                    (i, name, p.requires_grad, p.numel(), list(p.shape), p.mean(), p.std()))
+
     def inference(self, im, *args, **kwargs):
         visualize = increment_path(self.save_dir / Path(self.batch[0][0]).stem,
                                    mkdir=True) if self.args.visualize and (not self.source_type.tensor) else False
+
+        print("p 000: ",next(self.model.parameters())[0][0][0])
+        
+
         return self.model(im, augment=self.args.augment, visualize=visualize)
 
     def pre_transform(self, im):
@@ -242,15 +255,21 @@ class BasePredictor:
         for batch in self.dataset:
             self.run_callbacks('on_predict_batch_start')
             self.batch = batch
-            path, im0s, vid_cap, s = batch
+            path, im0s, vid_cap, s = batch #im0s shape: (1080,810,3)
 
             # Preprocess
             with profilers[0]:
-                im = self.preprocess(im0s)
+                im = self.preprocess(im0s) # torch.Size([1, 3, 640, 480])
+
+            # print("im: ",im.shape)
+            # im = torch.ones(1,3,640,640).to(self.device)
 
             # Inference
             with profilers[1]:
-                preds = self.inference(im, *args, **kwargs)
+                preds = self.inference(im, *args, **kwargs) #preds: tuple: 0: torch.Size([1, 56, 6300])  
+                                                            #              1: tuple: 0: array: [torch.Size([1, 65, 80, 60]), torch.Size([1, 65, 40, 30]), torch.Size([1, 65, 20, 15])]
+                                                            #                        1： torch.Size([1, 51, 6300])  
+            
 
             # Postprocess
             with profilers[2]:

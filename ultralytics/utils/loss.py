@@ -89,18 +89,25 @@ class BboxLoss(nn.Module):
 
 
 class KeypointLoss(nn.Module):
-
+    # OKS_SIGMA = np.array([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62, .62, 1.07, 1.07, .87, .87, .89, .89]) / 10.0
     def __init__(self, sigmas) -> None:
         super().__init__()
-        self.sigmas = sigmas
+        self.sigmas = sigmas  #sigmas shape:torch.Size([17])  相当于给与不同点不同的损失权重
 
-    def forward(self, pred_kpts, gt_kpts, kpt_mask, area):
+    # kpt_mask = gt_kpt[..., 2] != 0 存在的目标点才计算 shape:torch.Size([20, 17])
+    def forward(self, pred_kpts, gt_kpts, kpt_mask, area): #area 是目标框的area
         """Calculates keypoint loss factor and Euclidean distance loss for predicted and actual keypoints."""
-        d = (pred_kpts[..., 0] - gt_kpts[..., 0]) ** 2 + (pred_kpts[..., 1] - gt_kpts[..., 1]) ** 2
-        kpt_loss_factor = (torch.sum(kpt_mask != 0) + torch.sum(kpt_mask == 0)) / (torch.sum(kpt_mask != 0) + 1e-9)
+        d = (pred_kpts[..., 0] - gt_kpts[..., 0]) ** 2 + (pred_kpts[..., 1] - gt_kpts[..., 1]) ** 2 #torch.Size([20, 17])
+        kpt_loss_factor = (torch.sum(kpt_mask != 0) + torch.sum(kpt_mask == 0)) / (torch.sum(kpt_mask != 0) + 1e-9) # 总数/有效点数目
         # e = d / (2 * (area * self.sigmas) ** 2 + 1e-9)  # from formula
-        e = d / (2 * self.sigmas) ** 2 / (area + 1e-9) / 2  # from cocoeval
-        return kpt_loss_factor * ((1 - torch.exp(-e)) * kpt_mask).mean()
+        e = d / (2 * self.sigmas) ** 2 / (area + 1e-9) / 2  # from cocoeval  同样的距离误差，目标框面积更小的，偏差比例更大。不难理解
+        return kpt_loss_factor * ((1 - torch.exp(-e)) * kpt_mask).mean() 
+        # torch.exp(x)  e的x次方， 参数e取反必为负，将其torch.exp(-e)限定在了0-1，但是e越大torch.exp(-e)反而越小，单调性与损失值意义相反，
+        # 所以用1-torch.exp(-e)，纠正其与e具有相同的单调性：预测点和实际点偏差越大，损失值越大
+
+        # 此处有一个疑问,假如目标点只有一个，则其余点的mask都是0，若这个点误差很大，但是因为最后除以17取mean，算出来的误差也非常小
+        # 答疑，因为乘以了缩放因子kpt_loss_factor，有效点数越少的时候放大得越大，所以上面的疑问误差不存在
+        
 
 
 # Criterion class for computing Detection training losses
@@ -358,7 +365,7 @@ class v8PoseLoss(v8DetectionLoss):
                     gt_kpt = keypoints[batch_idx.view(-1) == i][idx]  # (n, 51)
                     gt_kpt[..., 0] /= stride_tensor[fg_mask[i]]
                     gt_kpt[..., 1] /= stride_tensor[fg_mask[i]]
-                    area = xyxy2xywh(target_bboxes[i][fg_mask[i]])[:, 2:].prod(1, keepdim=True)
+                    area = xyxy2xywh(target_bboxes[i][fg_mask[i]])[:, 2:].prod(1, keepdim=True) # torch.prod()函数是PyTorch中的一个函数，用于计算张量中所有元素的乘积。
                     pred_kpt = pred_kpts[i][fg_mask[i]]
                     kpt_mask = gt_kpt[..., 2] != 0
                     loss[1] += self.keypoint_loss(pred_kpt, gt_kpt, kpt_mask, area)  # pose loss
