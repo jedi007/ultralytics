@@ -62,13 +62,19 @@ class BboxLoss(nn.Module):
 
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask):
         """IoU loss."""
-        weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+        # target_bboxes： torch.Size([1, 8400, 4])  # target_scores： torch.Size([1, 8400, 80]) 80是类别数
+        # fg_mask：torch.Size([1, 8400]) [[False, False..................True..........]]
+        # target_scores_sum： tensor(15.1255, device='cuda:0') shape:torch.Size([])
+        # anchor_points：torch.Size([8400, 2]): [[0.5,0.5],[1.5,0.5]....]
+        # pred_bboxes：torch.Size([1, 8400, 4])； pred_dist： torch.Size([1, 8400, 64])
+        weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1) # torch.Size([36, 1]) target_scores最后一维求和的值相当于yolov5中是否是object的置信度权重
+        # tensor([[5.7252e-06], [2.6226e-04], [2.5084e-01], ...], device='cuda:0')
+        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True) # torch.Size([36, 1])
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
 
         # DFL loss
         if self.use_dfl:
-            target_ltrb = bbox2dist(anchor_points, target_bboxes, self.reg_max)
+            target_ltrb = bbox2dist(anchor_points, target_bboxes, self.reg_max) #torch.Size([1, 8400, 4]) xyxy 转变为距离当前anchor_point的距离（lt_dx,lt_dy,rb_dx,rb_dy）
             loss_dfl = self._df_loss(pred_dist[fg_mask].view(-1, self.reg_max + 1), target_ltrb[fg_mask]) * weight
             loss_dfl = loss_dfl.sum() / target_scores_sum
         else:
@@ -171,31 +177,35 @@ class v8DetectionLoss:
 
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
-        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
-        anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
+        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w) {80*80}*{8} ==>{640,640} 
+        anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5) # torch.Size([8400, 2]): [[0.5,0.5],[1.5,0.5]....]  ; torch.Size([8400, 1]): [8,8,...,16,16,...32,32]
 
         # targets
-        targets = torch.cat((batch['batch_idx'].view(-1, 1), batch['cls'].view(-1, 1), batch['bboxes']), 1)
-        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
-        gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
-        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
+        targets = torch.cat((batch['batch_idx'].view(-1, 1), batch['cls'].view(-1, 1), batch['bboxes']), 1) #torch.Size([5, 6])： 5是目标数  batch['bboxes']: torch.Size([5, 4]) 5个目标的box归一化值
+        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]]) # torch.Size([1, 5, 5]) （batchsize, 目标数5， {类别，box像素值}）
+        gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy ： torch.Size([1, 5, 1])， torch.Size([1, 5, 4])
+        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0) # torch.Size([1, 5, 1]) 排除gtbox无效的数据？
 
         # pboxes
-        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)  torch.Size([1, 8400, 4])
 
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
             anchor_points * stride_tensor, gt_labels, gt_bboxes, mask_gt)
+        # target_bboxes： torch.Size([1, 8400, 4])  # target_scores： torch.Size([1, 8400, 80]) 80是类别数
+        # fg_mask：torch.Size([1, 8400]) [[False, False..................True..........]]
 
-        target_scores_sum = max(target_scores.sum(), 1)
+        target_scores_sum = max(target_scores.sum(), 1) # tensor(15.1255, device='cuda:0') shape:torch.Size([])
 
         # cls loss
         # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE  
+        # 因为一个gt目标在target_scores可能存在多份，所以一个gt目标的损失值会被计算多次，所以最后再除以target_scores_sum
+        # 以避免因为gt目标数量增多导致损失值直线上升的问题
 
         # bbox loss
         if fg_mask.sum():
-            target_bboxes /= stride_tensor
+            target_bboxes /= stride_tensor # xywh的单位换算成格数
             loss[0], loss[2] = self.bbox_loss(pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores,
                                               target_scores_sum, fg_mask)
 
