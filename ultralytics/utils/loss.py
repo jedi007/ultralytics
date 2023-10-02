@@ -82,14 +82,18 @@ class BboxLoss(nn.Module):
 
         return loss_iou, loss_dfl
 
-    @staticmethod
-    def _df_loss(pred_dist, target):
+    @staticmethod  
+    # pred_dist 由shape[36,64]变成shape[144,16]，第0维依次每4个一组，分别表示lt_x/lt_y/rb_x/rb_y距离target中心的距离格数（一格8,16,32像素）,
+    # 这里被reg_max这个隐藏超参设置为了16格，所以实际暗含了限制只能预测到角点距离object中心点不超过16格的目标。并且将其转化为了类别回归的做法，
+    # 后续也是像求类别损失一样，用的F.cross_entropy交叉熵求其角点应该处在某一格的损失
+    def _df_loss(pred_dist, target): # pred_dist: torch.Size([144, 16])  target: torch.Size([36, 4]) （lt_dx,lt_dy,rb_dx,rb_dy）
         """Return sum of left and right DFL losses."""
         # Distribution Focal Loss (DFL) proposed in Generalized Focal Loss https://ieeexplore.ieee.org/document/9792391
-        tl = target.long()  # target left
-        tr = tl + 1  # target right
-        wl = tr - target  # weight left
-        wr = 1 - wl  # weight right
+        tl = target.long()  # target left  long()会向下取整 torch.Size([36, 4])
+        tr = tl + 1  # target right         torch.Size([36, 4]) 相当于target向上取整
+        wl = tr - target  # weight left   按向下取整的格数算loss的权重
+        wr = 1 - wl  # weight right       按向上取整的格数算loss的权重
+        # 相当于一个target转换成了两个正样本，一个向下取整的格数，一个向上取整的格数，再按整格数距离实际target越近的权重越大计算其加权损失
         return (F.cross_entropy(pred_dist, tl.view(-1), reduction='none').view(tl.shape) * wl +
                 F.cross_entropy(pred_dist, tr.view(-1), reduction='none').view(tl.shape) * wr).mean(-1, keepdim=True)
 
