@@ -9,7 +9,7 @@ from .metrics import bbox_iou
 TORCH_1_10 = check_version(torch.__version__, '1.10.0')
 
 
-def select_candidates_in_gts(xy_centers, gt_bboxes, eps=1e-9):
+def select_candidates_in_gts(xy_centers, gt_bboxes, eps=1e-9): # xy_centers：torch.Size([8400, 2])  gt_bboxes：torch.Size([1, 5, 4])
     """select the positive anchor center in gt
 
     Args:
@@ -20,8 +20,8 @@ def select_candidates_in_gts(xy_centers, gt_bboxes, eps=1e-9):
     """
     n_anchors = xy_centers.shape[0]
     bs, n_boxes, _ = gt_bboxes.shape
-    lt, rb = gt_bboxes.view(-1, 1, 4).chunk(2, 2)  # left-top, right-bottom
-    bbox_deltas = torch.cat((xy_centers[None] - lt, rb - xy_centers[None]), dim=2).view(bs, n_boxes, n_anchors, -1)
+    lt, rb = gt_bboxes.view(-1, 1, 4).chunk(2, 2)  # left-top, right-bottom  torch.Size([5, 1, 2])， torch.Size([5, 1, 2])
+    bbox_deltas = torch.cat((xy_centers[None] - lt, rb - xy_centers[None]), dim=2).view(bs, n_boxes, n_anchors, -1)  # (5,8400,4) view to: torch.Size([1, 5, 8400, 4])
     # return (bbox_deltas.min(3)[0] > eps).to(gt_bboxes.dtype)
     return bbox_deltas.amin(3).gt_(eps)
 
@@ -80,7 +80,7 @@ class TaskAlignedAssigner(nn.Module):
         self.eps = eps
 
     @torch.no_grad()
-    def forward(self, pd_scores, pd_bboxes, anc_points, gt_labels, gt_bboxes, mask_gt):
+    def forward(self, pd_scores, pd_bboxes, anc_points, gt_labels, gt_bboxes, mask_gt): # torch.Size([1, 8400, 80])， torch.Size([1, 8400, 4])， torch.Size([8400, 2])， torch.Size([1, 5, 1])，  torch.Size([1, 5, 4])， torch.Size([1, 5, 1])
         """
         Compute the task-aligned assignment.
         Reference https://github.com/Nioolek/PPYOLOE_pytorch/blob/master/ppyoloe/assigner/tal_assigner.py
@@ -140,13 +140,13 @@ class TaskAlignedAssigner(nn.Module):
 
     def get_box_metrics(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_gt):
         """Compute alignment metric given predicted and ground truth bounding boxes."""
-        na = pd_bboxes.shape[-2]
+        na = pd_bboxes.shape[-2] # torch.Size([1, 8400, 4])
         mask_gt = mask_gt.bool()  # b, max_num_obj, h*w
-        overlaps = torch.zeros([self.bs, self.n_max_boxes, na], dtype=pd_bboxes.dtype, device=pd_bboxes.device)
-        bbox_scores = torch.zeros([self.bs, self.n_max_boxes, na], dtype=pd_scores.dtype, device=pd_scores.device)
+        overlaps = torch.zeros([self.bs, self.n_max_boxes, na], dtype=pd_bboxes.dtype, device=pd_bboxes.device) # torch.Size([1, 5, 8400])
+        bbox_scores = torch.zeros([self.bs, self.n_max_boxes, na], dtype=pd_scores.dtype, device=pd_scores.device) # torch.Size([1, 5, 8400])
 
-        ind = torch.zeros([2, self.bs, self.n_max_boxes], dtype=torch.long)  # 2, b, max_num_obj
-        ind[0] = torch.arange(end=self.bs).view(-1, 1).expand(-1, self.n_max_boxes)  # b, max_num_obj
+        ind = torch.zeros([2, self.bs, self.n_max_boxes], dtype=torch.long)  # 2, b, max_num_obj torch.Size([2, 1, 5])
+        ind[0] = torch.arange(end=self.bs).view(-1, 1).expand(-1, self.n_max_boxes)  # b, max_num_obj  
         ind[1] = gt_labels.squeeze(-1)  # b, max_num_obj
         # Get the scores of each grid for each gt cls
         bbox_scores[mask_gt] = pd_scores[ind[0], :, ind[1]][mask_gt]  # b, max_num_obj, h*w
