@@ -26,7 +26,7 @@ def select_candidates_in_gts(xy_centers, gt_bboxes, eps=1e-9): # xy_centers：to
     return bbox_deltas.amin(3).gt_(eps) # amin(3)求出lt_x,lt_y,rb_x,rb_y中最小者，gt_(eps)比较该最小者是否大于eps，若不大于，则说明该anchor_center不在目标框内
 
 
-def select_highest_overlaps(mask_pos, overlaps, n_max_boxes):
+def select_highest_overlaps(mask_pos, overlaps, n_max_boxes): # mask_pos: torch.Size([1, 5, 8400])   overlaps: torch.Size([1, 5, 8400])
     """if an anchor box is assigned to multiple gts,
         the one with the highest iou will be selected.
 
@@ -39,8 +39,8 @@ def select_highest_overlaps(mask_pos, overlaps, n_max_boxes):
         mask_pos (Tensor): shape(b, n_max_boxes, h*w)
     """
     # (b, n_max_boxes, h*w) -> (b, h*w)
-    fg_mask = mask_pos.sum(-2)
-    if fg_mask.max() > 1:  # one anchor is assigned to multiple gt_bboxes
+    fg_mask = mask_pos.sum(-2) # torch.Size([1, 8400])  表示8400个框对应有分配target的是 哪些
+    if fg_mask.max() > 1:  # one anchor is assigned to multiple gt_bboxes  如果某一格被分配了多个target，则哪一个与gtbox的IOU大就保哪一个
         mask_multi_gts = (fg_mask.unsqueeze(1) > 1).expand(-1, n_max_boxes, -1)  # (b, n_max_boxes, h*w)
         max_overlaps_idx = overlaps.argmax(1)  # (b, h*w)
 
@@ -50,7 +50,7 @@ def select_highest_overlaps(mask_pos, overlaps, n_max_boxes):
         mask_pos = torch.where(mask_multi_gts, is_max_overlaps, mask_pos).float()  # (b, n_max_boxes, h*w)
         fg_mask = mask_pos.sum(-2)
     # Find each grid serve which gt(index)
-    target_gt_idx = mask_pos.argmax(-2)  # (b, h*w)
+    target_gt_idx = mask_pos.argmax(-2)  # (b, h*w)  torch.Size([1, 8400])  此时mask_pos已经处理过同一anchor被分配了多次的问题，所以此时再取argmax相当于是获得最终作为target的anchor的index
     return target_gt_idx, fg_mask, mask_pos
 
 
@@ -114,6 +114,9 @@ class TaskAlignedAssigner(nn.Module):
         # mask_pos, align_metric, overlaps: torch.Size([1, 5, 8400])
 
         target_gt_idx, fg_mask, mask_pos = select_highest_overlaps(mask_pos, overlaps, self.n_max_boxes)
+        # target_gt_idx:torch.Size([1, 8400]) 记录8400个anchor中作为target的index
+        # fg_mask：torch.Size([1, 8400]) 8400个框中哪些是target的mask
+        # mask_pos：torch.Size([1, 5, 8400]) 8400个框中哪些是target的mask， 不过是按单个object计算的，共有5个object
 
         # Assigned target
         target_labels, target_bboxes, target_scores = self.get_targets(gt_labels, gt_bboxes, target_gt_idx, fg_mask)
@@ -129,7 +132,7 @@ class TaskAlignedAssigner(nn.Module):
 
     def get_pos_mask(self, pd_scores, pd_bboxes, gt_labels, gt_bboxes, anc_points, mask_gt):# mask_gt： torch.Size([1, 5, 1])
         """Get in_gts mask, (b, max_num_obj, h*w)."""
-        mask_in_gts = select_candidates_in_gts(anc_points, gt_bboxes) # torch.Size([1, 5, 8400]) anchor_center在目标框内
+        mask_in_gts = select_candidates_in_gts(anc_points, gt_bboxes) # torch.Size([1, 5, 8400]) anchor_center在目标框内的mask
         # Get anchor_align metric, (b, max_num_obj, h*w)
         align_metric, overlaps = self.get_box_metrics(pd_scores, pd_bboxes, gt_labels, gt_bboxes, mask_in_gts * mask_gt) # torch.Size([1, 5, 8400]) ， torch.Size([1, 5, 8400])
         # Get topk_metric mask, (b, max_num_obj, h*w)
@@ -194,9 +197,12 @@ class TaskAlignedAssigner(nn.Module):
             count_tensor.scatter_add_(-1, topk_idxs[:, :, k:k + 1], ones)
         # count_tensor.scatter_add_(-1, topk_idxs, torch.ones_like(topk_idxs, dtype=torch.int8, device=topk_idxs.device))
         # filter invalid bboxes
-        count_tensor.masked_fill_(count_tensor > 1, 0)
+        count_tensor.masked_fill_(count_tensor > 1, 0) 
+        # topk_mask 中如果有0，topk_idxs中对应维度的元素在之前的操作中也被全部置0了，
+        # 所以对应的count_tensor.scatter_add_全部加在了第0个位置上，便出现了count_tensor大于1的情况
+        # 所以这一步操作也是在为有box size为0的无效object擦屁股
 
-        return count_tensor.to(metrics.dtype)
+        return count_tensor.to(metrics.dtype) #返回的是torch.Size([1, 5, 8400])的metrics哪些被选中参与loss运算的mask
 
     def get_targets(self, gt_labels, gt_bboxes, target_gt_idx, fg_mask):
         """
