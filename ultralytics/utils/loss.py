@@ -202,6 +202,8 @@ class v8DetectionLoss:
 
         target_scores_sum = max(target_scores.sum(), 1) # tensor(15.1255, device='cuda:0') shape:torch.Size([])
 
+        # test = self.bce(pred_scores, target_scores.to(dtype)) # torch.Size([1, 8400, 80])
+        
         # cls loss
         # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
         loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE  
@@ -216,7 +218,7 @@ class v8DetectionLoss:
 
         loss[0] *= self.hyp.box  # box gain
         loss[1] *= self.hyp.cls  # cls gain
-        loss[2] *= self.hyp.dfl  # dfl gain
+        loss[2] *= self.hyp.dfl  # dfl gain loss: tensor([1.1884, 1.3994, 1.2477], device='cuda:0', grad_fn=<CopySlices>)
 
         return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
 
