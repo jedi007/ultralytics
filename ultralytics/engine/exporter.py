@@ -159,7 +159,7 @@ class Exporter:
             raise ValueError(f"Invalid export format='{format}'. Valid formats are {fmts}")
         jit, onnx, xml, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle, ncnn = flags  # export booleans
 
-        self.args.device = "cpu"
+        # self.args.device = "cpu"
         print("if self.args.device: ", self.args.device)
         # Load PyTorch model
         self.device = select_device('cpu' if self.args.device is None else self.args.device)
@@ -202,8 +202,8 @@ class Exporter:
                 m.forward = m.forward_split
 
         for i, (name, p) in enumerate(model.named_parameters()):
-            print("p: ",p.shape)
-            print("p 000: ",p[0][0][0])
+            print("p: ", p.shape)
+            print("p 000: ", p[0][0][0])
             break
 
         y = None
@@ -994,7 +994,7 @@ class iOSDetectModel(torch.nn.Module):
 
 def export(cfg=DEFAULT_CFG):
     """Export a YOLOv model to a specific format."""
-    cfg.model = 'yolov8s-pose.pt'#cfg.model or 'yolov8n.yaml'
+    cfg.model = 'yolov8s.pt'  # 'yolov8s-pose.pt' #cfg.model or 'yolov8n.yaml'
     cfg.format = cfg.format or 'torchscript'
 
     from ultralytics import YOLO

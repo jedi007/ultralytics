@@ -187,7 +187,7 @@ class v8DetectionLoss:
 
         # targets
         targets = torch.cat((batch['batch_idx'].view(-1, 1), batch['cls'].view(-1, 1), batch['bboxes']), 1) #torch.Size([5, 6])： 5是目标数  batch['bboxes']: torch.Size([5, 4]) 5个目标的box归一化值
-        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]]) # torch.Size([1, 5, 5]) （batchsize, 目标数5， {类别，box像素值}）
+        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]]) # torch.Size([1, 5, 5]) （batchsize, 目标数5， {类别，box像素值（xyxy）}）
         gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy ： torch.Size([1, 5, 1])， torch.Size([1, 5, 4])
         mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0) # torch.Size([1, 5, 1]) 排除gtbox无效的数据？
 
