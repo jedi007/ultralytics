@@ -14,7 +14,7 @@ class PosePredictor(DetectionPredictor):
             LOGGER.warning("WARNING ⚠️ Apple MPS known Pose bug. Recommend 'device=cpu' for Pose models. "
                            'See https://github.com/ultralytics/ultralytics/issues/4031.')
 
-    def postprocess(self, preds, img, orig_imgs):
+    def postprocess(self, preds, img, orig_imgs):  # preds: [torch.Size([1, 56, 6300]),  ([torch.Size([1, 65, 80, 60]), torch.Size([1, 65, 40, 30]), torch.Size([1, 65, 20, 15])], torch.Size([1, 51, 6300]))]
         """Return detection results for a given input image or list of images."""
         preds = ops.non_max_suppression(preds,
                                         self.args.conf,
@@ -23,6 +23,7 @@ class PosePredictor(DetectionPredictor):
                                         max_det=self.args.max_det,
                                         classes=self.args.classes,
                                         nc=len(self.model.names))
+        # preds: [torch.Size([4, 57])]
 
         results = []
         for i, pred in enumerate(preds):
