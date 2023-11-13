@@ -13,7 +13,7 @@ class SegmentationPredictor(DetectionPredictor):
         super().__init__(cfg, overrides, _callbacks)
         self.args.task = 'segment'
 
-    def postprocess(self, preds, img, orig_imgs):
+    def postprocess(self, preds, img, orig_imgs):  # preds: [torch.Size([1, 116, 6300]),  tuple([torch.Size([1, 144, 80, 60]), torch.Size([1, 144, 40, 30]), torch.Size([1, 144, 20, 15])], torch.Size([1, 32, 6300]), torch.Size([1, 32, 160, 120]))]
         """TODO: filter by classes."""
         p = ops.non_max_suppression(preds[0],
                                     self.args.conf,
@@ -23,8 +23,9 @@ class SegmentationPredictor(DetectionPredictor):
                                     nc=len(self.model.names),
                                     classes=self.args.classes)
         results = []
-        proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]  # second output is len 3 if pt, but only 1 if exported
-        for i, pred in enumerate(p):
+        # p: [torch.Size([6, 38])]
+        proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]  # second output is len 3 if pt, but only 1 if exported   torch.Size([1, 32, 160, 120])
+        for i, pred in enumerate(p):  # pred: torch.Size([6, 38])
             orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
             path = self.batch[0]
             img_path = path[i] if isinstance(path, list) else path
@@ -36,7 +37,7 @@ class SegmentationPredictor(DetectionPredictor):
                     pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
                 masks = ops.process_mask_native(proto[i], pred[:, 6:], pred[:, :4], orig_img.shape[:2])  # HWC
             else:
-                masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC
+                masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC  裁剪 预测的分割区域proto[i] 在预测目标框外的部分
                 if not isinstance(orig_imgs, torch.Tensor):
                     pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
             results.append(

@@ -633,8 +633,8 @@ def resample_segments(segments, n=1000):
     return segments
 
 
-def crop_mask(masks, boxes):
-    """
+def crop_mask(masks, boxes): # masks: torch.Size([6, 160, 120])  boxes: torch.Size([6, 4])
+    """ 
     It takes a mask and a bounding box, and returns a mask that is cropped to the bounding box
 
     Args:
@@ -646,8 +646,8 @@ def crop_mask(masks, boxes):
     """
     n, h, w = masks.shape
     x1, y1, x2, y2 = torch.chunk(boxes[:, :, None], 4, 1)  # x1 shape(n,1,1)
-    r = torch.arange(w, device=masks.device, dtype=x1.dtype)[None, None, :]  # rows shape(1,1,w)
-    c = torch.arange(h, device=masks.device, dtype=x1.dtype)[None, :, None]  # cols shape(1,h,1)
+    r = torch.arange(w, device=masks.device, dtype=x1.dtype)[None, None, :]  # rows shape(1,1,w)   torch.Size([1, 1, 120])
+    c = torch.arange(h, device=masks.device, dtype=x1.dtype)[None, :, None]  # cols shape(1,h,1)   torch.Size([1, 160, 1])
 
     return masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
 
@@ -673,7 +673,7 @@ def process_mask_upsample(protos, masks_in, bboxes, shape):
     return masks.gt_(0.5)
 
 
-def process_mask(protos, masks_in, bboxes, shape, upsample=False):
+def process_mask(protos, masks_in, bboxes, shape, upsample=False):  # mask_in : torch.Size([6, 32])  bboxes: torch.Size([6, 4]) shape: torch.Size([640, 480])
     """
     Apply masks to bounding boxes using the output of the mask head.
 
@@ -689,9 +689,9 @@ def process_mask(protos, masks_in, bboxes, shape, upsample=False):
             are the height and width of the input image. The mask is applied to the bounding boxes.
     """
 
-    c, mh, mw = protos.shape  # CHW
+    c, mh, mw = protos.shape  # CHW  torch.Size([32, 160, 120])
     ih, iw = shape
-    masks = (masks_in @ protos.float().view(c, -1)).sigmoid().view(-1, mh, mw)  # CHW
+    masks = (masks_in @ protos.float().view(c, -1)).sigmoid().view(-1, mh, mw)  # CHW  torch.Size([6, 160, 120])
 
     downsampled_bboxes = bboxes.clone()
     downsampled_bboxes[:, 0] *= mw / iw
@@ -702,7 +702,7 @@ def process_mask(protos, masks_in, bboxes, shape, upsample=False):
     masks = crop_mask(masks, downsampled_bboxes)  # CHW
     if upsample:
         masks = F.interpolate(masks[None], shape, mode='bilinear', align_corners=False)[0]  # CHW
-    return masks.gt_(0.5)
+    return masks.gt_(0.5)  # 写死了预测的分割像素阈值0.5
 
 
 def process_mask_native(protos, masks_in, bboxes, shape):
