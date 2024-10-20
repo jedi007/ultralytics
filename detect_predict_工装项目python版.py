@@ -2,12 +2,12 @@ import cv2
 from PIL import Image
 from ultralytics import YOLO
 import time
-
+import torch
 
 # prefix = int(time.time()/3600)
 filename = "1726132428485.mp4"
 prefix = filename
-save_path = "/home/hyzh/lijie/data/test_out"
+save_path = "./test_out"
 # save_path = "/home/hyzh/lijie/GitHub/V8/ultralytics/test_out"
 
 if __name__ == '__main__': 
@@ -17,6 +17,8 @@ if __name__ == '__main__':
     my_results = model(source=im1)
     # print("my_results: ", my_results)
     print("my_results.boxes: ", my_results[0].boxes)
+
+    classify_model = YOLO("classify_workclothes_241020.pt")
 
 
     #获取视频设备/从视频文件中读取视频帧
@@ -33,7 +35,7 @@ if __name__ == '__main__':
             break
 
         frame_index += 1
-        if frame_index % 10 != 0:  # 每10帧检测一次
+        if frame_index % 100 != 0:  # 每10帧检测一次
             continue
 
         if frame_index % 500 == 0:
@@ -53,17 +55,19 @@ if __name__ == '__main__':
                 
                 box = boxes.xyxy[index]
                 croped_img = frame[int(box[1]):int(box[3]), int(box[0]):int(box[2])]
+
+                classify_r = classify_model(croped_img)
+                # print("classify_r: ", classify_r)
+
+                max_indices = torch.argmax(classify_r[0].probs.data, dim=0).item()
+                class_name = classify_r[0].names[max_indices]
+
+                cv2.putText(frame, class_name, org = (int(box[0]), int(box[1])), color=(255, 0, 0), thickness=3, fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1)
                 
-                save_name = f"{prefix}-{frame_index}-{index}.jpg"
+            save_name = f"{prefix}-{frame_index}-{index}.jpg"
 
-                cv2.imwrite(f"{save_path}/{save_name}", croped_img)
+            cv2.imwrite(f"{save_path}/{save_name}", frame)
 
-
-            # im_array = results[0].plot()  # plot a BGR numpy array of predictions
-            # opencv_image = cv2.UMat(im_array)
-            # cv2.imwrite(f"{save_path}/1.jpg",opencv_image)
-
-            # exit(0)
 
     
     cap.release()
