@@ -29,24 +29,51 @@ def save_image(image_data, file_path):
     image = Image.open(io.BytesIO(image_data))
     image.save(file_path)
 
-model = YOLO("helmet_241009.pt")
+model_det_helmet = YOLO("helmet_241009.pt")
+model_cls_working_clothes = YOLO("cls_working_clothes_best.pt")
 
 def infer_check(img):
-    results = model.predict(source=img, save=True, save_txt=True)
-    print("result[0]: ", results[0].boxes)
+    '''返回元组， 第一位表示是否有戴安全帽， 第二位表示是否有穿工装'''
+    result_have_helmet = 0
+    result_have_working_clothes = 0
+
+    results = model_det_helmet.predict(source=img, save=True, save_txt=True)
     boxes = results[0].boxes
+
+    if len(boxes.cls) == 0:
+        return result_have_helmet, result_have_working_clothes
+    
+    for cls_id in boxes.cls:
+        if cls_id == 2:
+            result_have_helmet = 1
+            break
+
 
     max_index = 0
     max_area = boxes.xywh[max_index][2] * boxes.xywh[max_index][3]
-    print("max_area: ", max_area)
     for i in range(1, len(boxes.cls)):
         area = boxes.xywh[i][2] * boxes.xywh[i][3]
         if area > max_area:
             max_area = area
             max_index = i
-    
-    print("max_index is: ", max_index)
 
+    cls_id = boxes.cls[max_index]
+    conf = boxes.conf[max_index]
+
+    
+    if cls_id == 0 or cls_id == 1: # personup or persondown
+        box = boxes.xyxy[max_index]
+        croped_img = img[int(box[1]):int(box[3]), int(box[0]):int(box[2])]
+
+        cls_results = model_cls_working_clothes.predict(source=croped_img, save=True, save_txt=True)
+
+        cls_top1 = cls_results[0].probs.top1
+        cls_top1_conf = cls_results[0].probs.top1conf
+
+        if cls_top1 == 2:                # "other_clothes", "unknow", "working_clothes"
+            result_have_working_clothes = 1
+    
+    return result_have_helmet, result_have_working_clothes
 
 
 
@@ -67,7 +94,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             image_base64 = json_data["image_base64"]
             img = base64_to_opencvimage(image_base64)
 
-            infer_check(img)
+            result_have_helmet, result_have_working_clothes = infer_check(img)
 
             cv2.imwrite(f"save_test_img.jpg", img)   
         
@@ -79,8 +106,10 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
                             "working_clothes": 1
                             }}
             result_json["image_id"] = json_data["image_id"]
-            result_json["result"]["helmet"] = 1
-            result_json["result"]["working_clothes"] = 0
+            result_json["result"]["helmet"] = result_have_helmet
+            result_json["result"]["working_clothes"] = result_have_working_clothes
+
+            print("result_json: ", result_json)
 
             
             # 解析POST请求的数据
@@ -103,19 +132,14 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
 
 
+if __name__ == "__main__":
+    # 设置服务器端口
+    port = 9091
+    server_address = ('', port)
 
+    # 创建HTTP服务器
+    httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
 
-
-
-    
-
-# 设置服务器端口
-port = 9091
-server_address = ('', port)
-
-# 创建HTTP服务器
-httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
-
-# 开始运行服务器
-print(f"Server running on port {port}...")
-httpd.serve_forever()
+    # 开始运行服务器
+    print(f"Server running on port {port}...")
+    httpd.serve_forever()
