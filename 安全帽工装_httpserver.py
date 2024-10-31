@@ -6,6 +6,7 @@ from PIL import Image
 import io
 import cv2
 import numpy as np
+from ultralytics import YOLO
 
 def base64_to_image(base64_string):
     image_data = base64.b64decode(base64_string)
@@ -27,6 +28,11 @@ def save_image(image_data, file_path):
     image = Image.open(io.BytesIO(image_data))
     image.save(file_path)
 
+model = YOLO("yolov8n.pt")
+
+def infer_check(img):
+    results = model.predict(source=img, save=True, save_txt=True)
+    print("result[0]: ", results[0].boxes)
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
@@ -39,10 +45,12 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         # print("post: ", post_data)
 
         json_data = json.loads(post_data)
-        print(f"json_data: {json_data}")
+        # print(f"json_data: {json_data}")
 
         image_base64 = json_data["image_base64"]
         img = base64_to_opencvimage(image_base64)
+
+        infer_check(img)
 
         cv2.imwrite(f"save_test_img.jpg", img)
 
