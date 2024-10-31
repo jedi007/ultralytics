@@ -11,7 +11,7 @@ if __name__ == '__main__':
     # model.nc = 2
 
     # 使用模型
-    model.train(data="/home/hyzh/lijie/data/MyDataset/working_clothes_cls", epochs=25, cfg="classify-workclothew_super.yaml")  # 训练模型
+    model.train(data="/home/hyzh/lijie/data/MyDataset/reflective_jacket_cls", epochs=25, cfg="classify-workclothew_super.yaml")  # 训练模型
     metrics = model.val()  # 在验证集上评估模型性能
     # results = model("../datasets/test_image")  # 对图像进行预测
     # success = model.export(format="onnx")  # 将模型导出为 ONNX 格式
