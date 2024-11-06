@@ -32,6 +32,21 @@ def save_image(image_data, file_path):
 model_det_helmet = YOLO("helmet_241009.pt")
 model_cls_working_clothes = YOLO("cls_working_clothes_best.pt")
 
+def boxINbox(s_box, b_box, in_rate = 0.8): #计算小框是否在大框内部， in_rate: 小框有多少比例在大框内部就算做是在大框内部的，返回值 T/F
+    '''box: xyxy'''
+    x1 = max(s_box[0], b_box[0])
+    y1 = max(s_box[1], b_box[1])
+    x2 = min(s_box[2], b_box[2])
+    y2 = min(s_box[3], b_box[3])
+
+    in_area = max(0, x2 - x1) * max(0, y2 - y1)
+    
+    s_box_area = (s_box[2] - s_box[0]) * (s_box[3] - s_box[1])
+
+    s_box_in_rate = in_area/s_box_area
+
+    return s_box_in_rate > in_rate
+
 def infer_check(img):
     '''返回元组， 第一位表示是否有戴安全帽， 第二位表示是否有穿工装'''
     result_have_helmet = 0
@@ -42,11 +57,6 @@ def infer_check(img):
 
     if len(boxes.cls) == 0:
         return result_have_helmet, result_have_working_clothes
-    
-    for cls_id in boxes.cls:
-        if cls_id == 2:
-            result_have_helmet = 1
-            break
 
 
     max_index = 0
@@ -60,10 +70,17 @@ def infer_check(img):
     cls_id = boxes.cls[max_index]
     conf = boxes.conf[max_index]
 
+    for index in range(0, len(boxes.cls)):
+        if boxes.cls[index] == 2:
+            b = boxINbox(boxes.xyxy[index] , boxes.xyxy[max_index])
+            if b == True:
+                result_have_helmet = 1
+                break
+
     
     if cls_id == 0 or cls_id == 1: # personup or persondown
         box = boxes.xyxy[max_index]
-        croped_img = img[int(box[0]):int(box[2]), int(box[1]):int(box[3])].copy()
+        croped_img = img[int(box[1]):int(box[3]), int(box[0]):int(box[2])].copy()
 
         # cv2.imshow("croped_img", croped_img)
         # if cv2.waitKey(1) & 0xFF == ord("q"):
