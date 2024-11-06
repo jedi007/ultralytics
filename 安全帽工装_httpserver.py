@@ -37,7 +37,7 @@ def infer_check(img):
     result_have_helmet = 0
     result_have_working_clothes = 0
 
-    results = model_det_helmet.predict(source=img, save=True, save_txt=True)
+    results = model_det_helmet.predict(source=img, save=True, save_txt=False)
     boxes = results[0].boxes
 
     if len(boxes.cls) == 0:
@@ -63,9 +63,13 @@ def infer_check(img):
     
     if cls_id == 0 or cls_id == 1: # personup or persondown
         box = boxes.xyxy[max_index]
-        croped_img = img[int(box[1]):int(box[3]), int(box[0]):int(box[2])]
+        croped_img = img[int(box[0]):int(box[2]), int(box[1]):int(box[3])].copy()
 
-        cls_results = model_cls_working_clothes.predict(source=croped_img, save=True, save_txt=True)
+        # cv2.imshow("croped_img", croped_img)
+        # if cv2.waitKey(1) & 0xFF == ord("q"):
+        #     exit(0)
+
+        cls_results = model_cls_working_clothes.predict(source=croped_img, save=True, save_txt=False)
 
         cls_top1 = cls_results[0].probs.top1
         cls_top1_conf = cls_results[0].probs.top1conf
@@ -93,11 +97,11 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
             image_base64 = json_data["image_base64"]
             img = base64_to_opencvimage(image_base64)
+            cv2.imwrite(f"save_test_img.jpg", img)   
 
             result_have_helmet, result_have_working_clothes = infer_check(img)
 
-            cv2.imwrite(f"save_test_img.jpg", img)   
-        
+            print("infer over")
             # json_data["image_base64"] = json_data["image_base64"][0:100]
 
             result_json = {"image_id": 0, 
