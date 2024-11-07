@@ -8,6 +8,7 @@ import io
 import cv2
 import numpy as np
 from ultralytics import YOLO
+from datetime import datetime
 
 def base64_to_image(base64_string):
     image_data = base64.b64decode(base64_string)
@@ -30,7 +31,7 @@ def save_image(image_data, file_path):
     image.save(file_path)
 
 model_det_helmet = YOLO("helmet_241009.pt")
-model_cls_working_clothes = YOLO("cls_working_clothes_best.pt")
+model_cls_working_clothes = YOLO("cls_working_clothes_yanshi.pt")
 
 def boxINbox(s_box, b_box, in_rate = 0.8): #计算小框是否在大框内部， in_rate: 小框有多少比例在大框内部就算做是在大框内部的，返回值 T/F
     '''box: xyxy'''
@@ -114,7 +115,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
             image_base64 = json_data["image_base64"]
             img = base64_to_opencvimage(image_base64)
-            cv2.imwrite(f"save_test_img.jpg", img)   
+            timestamp = datetime.now().timestamp() # 即从1970年1月1日00:00:00 UTC到现在的总秒数。
+            cv2.imwrite(f"./save_image/{timestamp}.jpg", img)   
 
             result_have_helmet, result_have_working_clothes = infer_check(img)
 

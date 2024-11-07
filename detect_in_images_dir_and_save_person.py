@@ -48,8 +48,8 @@ def one_img_crop(img_path, prefix, time_prefix):
 
 
 time_prefix = int(time.time()/3600)
-imgs_dir = "/home/hyzh/lijie/data/images_data/images"
-save_path = "/home/hyzh/lijie/data/images_data/crop_out"
+imgs_dir = "/home/hyzh/cache/save_image"
+save_path = "/home/hyzh/cache/save_image_out"
 # save_path = "/home/hyzh/lijie/GitHub/V8/ultralytics/test_out"
 
 if __name__ == '__main__': 
