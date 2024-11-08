@@ -32,6 +32,7 @@ def save_image(image_data, file_path):
 
 model_det_helmet = YOLO("helmet_241009.pt")
 model_cls_working_clothes = YOLO("cls_working_clothes_yanshi.pt")
+model_cls_helmet = YOLO("cls_helmet_20241108_2.pt")
 
 def boxINbox(s_box, b_box, in_rate = 0.8): #计算小框是否在大框内部， in_rate: 小框有多少比例在大框内部就算做是在大框内部的，返回值 T/F
     '''box: xyxy'''
@@ -77,6 +78,21 @@ def infer_check(img):
             if b == True:
                 result_have_helmet = 1
                 break
+        if boxes.cls[index] == 3:
+            box = boxes.xyxy[index]
+            croped_img = img[int(box[1]):int(box[3]), int(box[0]):int(box[2])].copy()
+
+            cls_results = model_cls_helmet.predict(source=croped_img, save=True, save_txt=False)
+            
+            cls_top1 = cls_results[0].probs.top1
+            cls_top1_conf = cls_results[0].probs.top1conf
+
+            if cls_top1 == 0: # 0: helmet 1: nohelmet
+                b = boxINbox(boxes.xyxy[index] , boxes.xyxy[max_index], 0.6)
+                if b == True:
+                    print("==================== fix to helmet")
+                    result_have_helmet = 1
+                    break
 
     
     if cls_id == 0 or cls_id == 1: # personup or persondown
@@ -145,7 +161,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             
             # 发送响应内容
             # response_message = f"Received POST request: {parsed_data}"
-            response_message = f"Received POST request: {result_json}"
+            response_message = f"{result_json}"
             self.wfile.write(response_message.encode('utf-8'))
 
         else:
