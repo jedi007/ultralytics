@@ -132,9 +132,11 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             image_base64 = json_data["image_base64"]
             img = base64_to_opencvimage(image_base64)
             timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f") # %f haomiao
-            cv2.imwrite(f"./save_image/{timestamp}.jpg", img)   
+            # cv2.imwrite(f"./save_image/{timestamp}.jpg", img)   
 
             result_have_helmet, result_have_working_clothes = infer_check(img)
+
+            cv2.imwrite(f"./save_image/{timestamp}-{result_have_helmet}-{result_have_working_clothes}.jpg", img)   
 
             print("infer over")
             # json_data["image_base64"] = json_data["image_base64"][0:100]
