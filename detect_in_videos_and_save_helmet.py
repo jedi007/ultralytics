@@ -31,12 +31,12 @@ def traverse_folder_filename(folder_path):
     return filename_list
 
 
-def crop_obj(img, box):
+def crop_obj(img, box, org = True):  # org 同时截取一张不随机缩放的原图
     img_h, img_w, _ = img.shape
 
     def random_change(v, hw, img_hw, model):
         random_number = random.randint(1, 100)
-        if random_number < 30:
+        if random_number < 60:
             change_v = max(random.random() * hw / 10, 1)
             if model == "add":
                 v += change_v
@@ -52,6 +52,9 @@ def crop_obj(img, box):
     y1 = box[1].item()
     y2 = box[3].item()
 
+    if org == True:
+        org_croped_img = img[int(y1):int(y2), int(x1):int(x2)]
+
     w = x2 - x1
     h = y2 - y1
 
@@ -63,7 +66,7 @@ def crop_obj(img, box):
 
     croped_img = img[int(y1):int(y2), int(x1):int(x2)]
 
-    return croped_img
+    return croped_img, org_croped_img
 
 def cap_video_crop(video_path, prefix):
     #获取视频设备/从视频文件中读取视频帧
@@ -101,11 +104,13 @@ def cap_video_crop(video_path, prefix):
                 
                 box = boxes.xyxy[obj_index]
 
-                croped_img = crop_obj(frame, box)
+                croped_img, org_croped_img = crop_obj(frame, box)
                 
                 save_name = f"{prefix}-{frame_index}-{obj_index}.jpg"
+                org_save_name = f"{prefix}-{frame_index}-{obj_index}-org.jpg"
 
                 cv2.imwrite(f"{save_path}/{save_name}", croped_img)
+                cv2.imwrite(f"{save_path}/{org_save_name}", org_croped_img)
 
     
     cap.release()
