@@ -74,7 +74,7 @@ def infer_check(img):
 
     for index in range(0, len(boxes.cls)):
         if boxes.cls[index] == 2:
-            b = boxINbox(boxes.xyxy[index] , boxes.xyxy[max_index])
+            b = boxINbox(boxes.xyxy[index] , boxes.xyxy[max_index], 0.6)
             if b == True:
                 result_have_helmet = 1
                 break
@@ -131,7 +131,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
             image_base64 = json_data["image_base64"]
             img = base64_to_opencvimage(image_base64)
-            timestamp = datetime.now().timestamp() # 即从1970年1月1日00:00:00 UTC到现在的总秒数。
+            timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f") # %f haomiao
             cv2.imwrite(f"./save_image/{timestamp}.jpg", img)   
 
             result_have_helmet, result_have_working_clothes = infer_check(img)
