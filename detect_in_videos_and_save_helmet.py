@@ -31,19 +31,19 @@ def traverse_folder_filename(folder_path):
     return filename_list
 
 
-def crop_obj(img, box, org = True):  # org 同时截取一张不随机缩放的原图
+def crop_obj(img, box, org = True):  # org 同时截取一张不随机扩展的原图
     img_h, img_w, _ = img.shape
 
     def random_change(v, hw, img_hw, model):
-        random_number = random.randint(1, 100)
-        if random_number < 60:
-            change_v = max(random.random() * hw / 10, 1)
-            if model == "add":
-                v += change_v
-                v = min(v, img_hw)
-            elif model == "sub":
-                v -= change_v
-                v = max(v, 0)
+        # random_number = random.randint(1, 100)
+        # if random_number < 60:
+        change_v = hw / 10 # max(random.random() * hw / 10, 1)
+        if model == "add":
+            v += change_v
+            v = min(v, img_hw)
+        elif model == "sub":
+            v -= change_v
+            v = max(v, 0)
         
         return v
     

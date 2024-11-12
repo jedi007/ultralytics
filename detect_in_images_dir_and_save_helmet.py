@@ -27,6 +27,44 @@ def traverse_folder_filename(folder_path):
     return filename_list
 
 
+def crop_obj(img, box, org = True):  # org 同时截取一张不随机扩展的原图
+    img_h, img_w, _ = img.shape
+
+    def random_change(v, hw, img_hw, model):
+        # random_number = random.randint(1, 100)
+        # if random_number < 60:
+        change_v = hw / 10 # max(random.random() * hw / 10, 1)
+        if model == "add":
+            v += change_v
+            v = min(v, img_hw)
+        elif model == "sub":
+            v -= change_v
+            v = max(v, 0)
+        
+        return v
+    
+    x1 = box[0].item()
+    x2 = box[2].item()
+    y1 = box[1].item()
+    y2 = box[3].item()
+
+    if org == True:
+        org_croped_img = img[int(y1):int(y2), int(x1):int(x2)]
+
+    w = x2 - x1
+    h = y2 - y1
+
+    x1 = random_change(x1, w, img_w, "sub")
+    y1 = random_change(y1, h, img_h, "sub")
+    x2 = random_change(x2, w, img_w, "add")
+    y2 = random_change(y2, h, img_h, "add")
+
+
+    croped_img = img[int(y1):int(y2), int(x1):int(x2)]
+
+    return croped_img, org_croped_img
+
+
 def one_img_crop(img_path, prefix, time_prefix):
     img = cv2.imread(img_path)
 
@@ -40,16 +78,19 @@ def one_img_crop(img_path, prefix, time_prefix):
             continue
         
         box = boxes.xyxy[obj_index]
-        croped_img = img[int(box[1]):int(box[3]), int(box[0]):int(box[2])]
-        
+
+        croped_img, org_croped_img = crop_obj(img, box)
+                
         save_name = f"{prefix}-{obj_index}.jpg"
+        org_save_name = f"{prefix}-{obj_index}-org.jpg"
 
         cv2.imwrite(f"{save_path}/{save_name}", croped_img)
+        cv2.imwrite(f"{save_path}/{org_save_name}", org_croped_img)
 
 
 time_prefix = int(time.time()/3600)
-imgs_dir = "/home/hyzh/cache/cls_helmet2"
-save_path = "/home/hyzh/cache/save_image_out"
+imgs_dir = "/home/hyzh/下载/抽烟打电话数据集/抽烟打电话-华录杯/train/train/smoke"
+save_path = "/home/hyzh/lijie/data/video_data/crop_out_smoke"
 # save_path = "/home/hyzh/lijie/GitHub/V8/ultralytics/test_out"
 
 if __name__ == '__main__': 
