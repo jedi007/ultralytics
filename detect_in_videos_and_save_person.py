@@ -43,7 +43,7 @@ def cap_video_crop(video_path, prefix):
             break
 
         frame_index += 1
-        if frame_index % 8 != 0:  # 每10帧检测一次
+        if frame_index % 20 != 0:  # 每10帧检测一次
             continue
 
         if frame_index % 500 == 0:
@@ -75,7 +75,7 @@ def cap_video_crop(video_path, prefix):
 
 
 # prefix = int(time.time()/3600)
-video_base_path = "/home/hyzh/lijie/data/video_data/bilibili_video"
+video_base_path = "/home/hyzh/lijie/data/video_data/in_videos"
 save_path = "/home/hyzh/lijie/data/video_data/crop_out"
 # save_path = "/home/hyzh/lijie/GitHub/V8/ultralytics/test_out"
 

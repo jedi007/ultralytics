@@ -4,14 +4,14 @@ from ultralytics import YOLO
 if __name__ == '__main__':  
     # 加载模型
     model = YOLO("yolov8m-cls.yaml")  # 从头开始构建新模型
-    model = YOLO("cls_working_clothes_241023.pt")  # 加载预训练模型（建议用于训练）
+    model = YOLO("cls_working_clothes_yanshi.pt")  # 加载预训练模型（建议用于训练）
 
     # 修改配置文件中的类别
     # model.nc = len(model.names)  # 设置类别数量
     # model.nc = 2
 
     # 使用模型
-    model.train(data="/home/hyzh/DATA/working_clothes_cls_fix", epochs=10, cfg="classify-workclothew_super.yaml")  # 训练模型
+    model.train(data="/home/hyzh/DATA/cls_working_clothes_2", epochs=20, cfg="classify-workclothew_super.yaml")  # 训练模型
     metrics = model.val()  # 在验证集上评估模型性能
     # results = model("../datasets/test_image")  # 对图像进行预测
     # success = model.export(format="onnx")  # 将模型导出为 ONNX 格式
