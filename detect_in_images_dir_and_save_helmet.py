@@ -3,6 +3,10 @@ from PIL import Image
 from ultralytics import YOLO
 import time
 import os
+import random
+
+# 设置随机数种子
+random.seed(666)
 
 # 设置一个放vidoe 文件的文件夹路径作为输入
 # 设置一个放裁剪好的图片的路径作为输出
@@ -27,42 +31,55 @@ def traverse_folder_filename(folder_path):
     return filename_list
 
 
-def crop_obj(img, box, org = True):  # org 同时截取一张不随机扩展的原图
+def crop_obj(img, box, padding_scale = 0.1): 
     img_h, img_w, _ = img.shape
-
-    def random_change(v, hw, img_hw, model):
-        # random_number = random.randint(1, 100)
-        # if random_number < 60:
-        change_v = hw / 10 # max(random.random() * hw / 10, 1)
-        if model == "add":
-            v += change_v
-            v = min(v, img_hw)
-        elif model == "sub":
-            v -= change_v
-            v = max(v, 0)
-        
-        return v
     
     x1 = box[0].item()
     x2 = box[2].item()
     y1 = box[1].item()
     y2 = box[3].item()
 
-    if org == True:
-        org_croped_img = img[int(y1):int(y2), int(x1):int(x2)]
+    box_w = x2 - x1
+    box_h = y2 - y1
 
-    w = x2 - x1
-    h = y2 - y1
+    w_padding = int(box_w * padding_scale)
+    h_padding = int(box_h * padding_scale) * 2
+    
+    crop_x1 = max(x1 - w_padding, 0)
+    crop_y1 = y1 # max(self.y1 - h_padding, 0)
+    crop_x2 = min(x2 + w_padding, img_w)
+    crop_y2 = min(y2 + h_padding, img_h)
 
-    x1 = random_change(x1, w, img_w, "sub")
-    y1 = random_change(y1, h, img_h, "sub")
-    x2 = random_change(x2, w, img_w, "add")
-    y2 = random_change(y2, h, img_h, "add")
+    croped_img = img[int(crop_y1):int(crop_y2), int(crop_x1):int(crop_x2)]
+
+    return croped_img
 
 
-    croped_img = img[int(y1):int(y2), int(x1):int(x2)]
+def crop_obj_add_random(img, box, padding_scale = 0.1):  
+    img_h, img_w, _ = img.shape
+    
+    x1 = box[0].item()
+    x2 = box[2].item()
+    y1 = box[1].item()
+    y2 = box[3].item()
 
-    return croped_img, org_croped_img
+    box_w = x2 - x1
+    box_h = y2 - y1
+
+    x1_padding = int(box_w * (padding_scale + random.uniform(0.01, 0.1)))
+    y1_padding = int(box_h * random.uniform(0.01, 0.1))
+    x2_padding = int(box_w * (padding_scale + random.uniform(0.01, 0.1)))
+    y2_padding = int(box_h * (padding_scale + random.uniform(0.01, 0.1)) *2 )
+
+
+    crop_x1 = max(x1 - x1_padding, 0)
+    crop_y1 = max(y1 - y1_padding, 0)
+    crop_x2 = min(x2 + x2_padding, img_w)
+    crop_y2 = min(y2 + y2_padding, img_h)
+
+    croped_img = img[int(crop_y1):int(crop_y2), int(crop_x1):int(crop_x2)]
+
+    return croped_img
 
 
 def one_img_crop(img_path, prefix, time_prefix):
@@ -79,18 +96,19 @@ def one_img_crop(img_path, prefix, time_prefix):
         
         box = boxes.xyxy[obj_index]
 
-        croped_img, org_croped_img = crop_obj(img, box)
+        croped_img = crop_obj(img, box, 0.15)
+        croped_img_random = crop_obj_add_random(img, box, 0.15)
                 
         save_name = f"{prefix}-{obj_index}.jpg"
-        org_save_name = f"{prefix}-{obj_index}-org.jpg"
+        save_name_random = f"{prefix}-{obj_index}-random.jpg"
 
         cv2.imwrite(f"{save_path}/{save_name}", croped_img)
-        cv2.imwrite(f"{save_path}/{org_save_name}", org_croped_img)
+        cv2.imwrite(f"{save_path}/{save_name_random}", croped_img_random)
 
 
 time_prefix = int(time.time()/3600)
-imgs_dir = "/home/hyzh/下载/抽烟打电话数据集/抽烟打电话-华录杯/train/train/smoke"
-save_path = "/home/hyzh/lijie/data/video_data/crop_out_smoke"
+imgs_dir = "/home/hyzh/下载/抽烟打电话数据集/抽烟打电话-华录杯/train/train/normal"
+save_path = "/home/hyzh/lijie/data/crop_out"
 # save_path = "/home/hyzh/lijie/GitHub/V8/ultralytics/test_out"
 
 if __name__ == '__main__': 
@@ -106,7 +124,16 @@ if __name__ == '__main__':
 
     # print("file_path_list: ", file_path_list)
 
+    count = 0
     for filename in file_name_list:
         file_path = f"{imgs_dir}/{filename}"
         
         one_img_crop(file_path, filename, time_prefix)
+
+        count += 1
+
+        if count % 100 == 0:
+            print(f"进度： {count}")
+        
+        # if count == 10:
+        #     break

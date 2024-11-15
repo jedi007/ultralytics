@@ -31,42 +31,64 @@ def traverse_folder_filename(folder_path):
     return filename_list
 
 
-def crop_obj(img, box, org = True):  # org 同时截取一张不随机扩展的原图
-    img_h, img_w, _ = img.shape
+def file_path_exists(file_path):
+    if os.path.exists(file_path):
+        print(f"{file_path} 存在！")
+    else:
+        print(f"{file_path} 不存在！")
+        b = os.mkdir(file_path)
+        print(f"创建文件夹{file_path} b:{b}")
 
-    def random_change(v, hw, img_hw, model):
-        # random_number = random.randint(1, 100)
-        # if random_number < 60:
-        change_v = hw / 10 # max(random.random() * hw / 10, 1)
-        if model == "add":
-            v += change_v
-            v = min(v, img_hw)
-        elif model == "sub":
-            v -= change_v
-            v = max(v, 0)
-        
-        return v
+def crop_obj(img, box, padding_scale = 0.1): 
+    img_h, img_w, _ = img.shape
     
     x1 = box[0].item()
     x2 = box[2].item()
     y1 = box[1].item()
     y2 = box[3].item()
 
-    if org == True:
-        org_croped_img = img[int(y1):int(y2), int(x1):int(x2)]
+    box_w = x2 - x1
+    box_h = y2 - y1
 
-    w = x2 - x1
-    h = y2 - y1
+    w_padding = int(box_w * padding_scale)
+    h_padding = int(box_h * padding_scale)
+    
+    crop_x1 = max(x1 - w_padding, 0)
+    crop_y1 = y1 # max(self.y1 - h_padding, 0)
+    crop_x2 = min(x2 + w_padding, img_w)
+    crop_y2 = min(y2 + h_padding, img_h)
 
-    x1 = random_change(x1, w, img_w, "sub")
-    y1 = random_change(y1, h, img_h, "sub")
-    x2 = random_change(x2, w, img_w, "add")
-    y2 = random_change(y2, h, img_h, "add")
+    croped_img = img[int(crop_y1):int(crop_y2), int(crop_x1):int(crop_x2)]
+
+    return croped_img
 
 
-    croped_img = img[int(y1):int(y2), int(x1):int(x2)]
+def crop_obj_add_random(img, box, padding_scale = 0.1):  
+    img_h, img_w, _ = img.shape
+    
+    x1 = box[0].item()
+    x2 = box[2].item()
+    y1 = box[1].item()
+    y2 = box[3].item()
 
-    return croped_img, org_croped_img
+    box_w = x2 - x1
+    box_h = y2 - y1
+
+    x1_padding = int(box_w * (padding_scale + random.uniform(0.02, 0.15)))
+    y1_padding = int(box_h * random.uniform(0.02, 0.15))
+    x2_padding = int(box_w * (padding_scale + random.uniform(0.02, 0.15)))
+    y2_padding = int(box_h * (padding_scale + random.uniform(0.02, 0.15)))
+
+
+    crop_x1 = max(x1 - x1_padding, 0)
+    crop_y1 = max(y1 - y1_padding, 0)
+    crop_x2 = min(x2 + x2_padding, img_w)
+    crop_y2 = min(y2 + y2_padding, img_h)
+
+    croped_img = img[int(crop_y1):int(crop_y2), int(crop_x1):int(crop_x2)]
+
+    return croped_img
+
 
 def cap_video_crop(video_path, prefix):
     #获取视频设备/从视频文件中读取视频帧
@@ -104,13 +126,14 @@ def cap_video_crop(video_path, prefix):
                 
                 box = boxes.xyxy[obj_index]
 
-                croped_img, org_croped_img = crop_obj(frame, box)
-                
+                croped_img = crop_obj(frame, box, 0.4)
+                croped_img_random = crop_obj_add_random(frame, box, 0.4)
+                        
                 save_name = f"{prefix}-{frame_index}-{obj_index}.jpg"
                 org_save_name = f"{prefix}-{frame_index}-{obj_index}-org.jpg"
 
                 cv2.imwrite(f"{save_path}/{save_name}", croped_img)
-                cv2.imwrite(f"{save_path}/{org_save_name}", org_croped_img)
+                cv2.imwrite(f"{save_path}/{org_save_name}", croped_img_random)
 
     
     cap.release()
@@ -122,6 +145,8 @@ def cap_video_crop(video_path, prefix):
 video_base_path = "/home/hyzh/lijie/data/video_data/in_videos"
 save_path = "/home/hyzh/lijie/data/video_data/crop_out"
 # save_path = "/home/hyzh/lijie/GitHub/V8/ultralytics/test_out"
+
+file_path_exists(save_path)
 
 if __name__ == '__main__': 
     model = YOLO("helmet_241009.pt")  # {0: 'personup', 1: 'persondown', 2: 'helmet', 3: 'nohelmet', 4: 'lanyard', 5: 'nolanyard'}
