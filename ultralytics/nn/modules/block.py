@@ -224,6 +224,15 @@ class C2f(nn.Module):
         self.cv2 = Conv((2 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
         self.m = nn.ModuleList(Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n))
 
+    # 何涛转ncnn， 与head.py forward一同修改
+    # def forward(self, x):
+    #     """Forward pass through C2f layer."""
+    #     x = self.cv1(x)
+    #     x = [x, x[:, self.c:, ...]]
+    #     x.extend(m(x[-1] for m in self.m))
+    #     x.pop(1)
+    #     return self.cv2(torch.cat(x, 1))
+
     def forward(self, x):
         """Forward pass through C2f layer."""
         y = list(self.cv1(x).chunk(2, 1))

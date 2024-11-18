@@ -40,6 +40,20 @@ class Detect(nn.Module):
         )
         self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, self.nc, 1)) for x in ch)
         self.dfl = DFL(self.reg_max) if self.reg_max > 1 else nn.Identity()
+    
+    # 何涛转ncnn， 与block.py forward一同修改
+    # def forward(self, x):
+    #     shape = x[0].shape
+    #     for i in range(self.n):
+    #         x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
+    #     if self.training:
+    #         return x
+    #     elif self.dynamic or self.shape != shape:
+    #         self.anchors, self.strides = (x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5))
+    #         self.shape = shape
+        
+    #     pred = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2).permute(0, 2 ,1)
+    #     return pred
 
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
