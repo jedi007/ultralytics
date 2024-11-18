@@ -43,7 +43,7 @@ def crop_obj(img, box, padding_scale = 0.1):
     box_h = y2 - y1
 
     w_padding = int(box_w * padding_scale)
-    h_padding = int(box_h * padding_scale) * 2
+    h_padding = int(box_h * padding_scale)
     
     crop_x1 = max(x1 - w_padding, 0)
     crop_y1 = y1 # max(self.y1 - h_padding, 0)
@@ -69,7 +69,7 @@ def crop_obj_add_random(img, box, padding_scale = 0.1):
     x1_padding = int(box_w * (padding_scale + random.uniform(0.01, 0.1)))
     y1_padding = int(box_h * random.uniform(0.01, 0.1))
     x2_padding = int(box_w * (padding_scale + random.uniform(0.01, 0.1)))
-    y2_padding = int(box_h * (padding_scale + random.uniform(0.01, 0.1)) *2 )
+    y2_padding = int(box_h * (padding_scale + random.uniform(0.01, 0.1)))
 
 
     crop_x1 = max(x1 - x1_padding, 0)
@@ -96,8 +96,8 @@ def one_img_crop(img_path, prefix, time_prefix):
         
         box = boxes.xyxy[obj_index]
 
-        croped_img = crop_obj(img, box, 0.15)
-        croped_img_random = crop_obj_add_random(img, box, 0.15)
+        croped_img = crop_obj(img, box, 0.4)
+        croped_img_random = crop_obj_add_random(img, box, 0.4)
                 
         save_name = f"{prefix}-{obj_index}.jpg"
         save_name_random = f"{prefix}-{obj_index}-random.jpg"
@@ -106,10 +106,20 @@ def one_img_crop(img_path, prefix, time_prefix):
         cv2.imwrite(f"{save_path}/{save_name_random}", croped_img_random)
 
 
+def file_path_exists(file_path):
+    if os.path.exists(file_path):
+        print(f"{file_path} 存在！")
+    else:
+        print(f"{file_path} 不存在！")
+        b = os.mkdir(file_path)
+        print(f"创建文件夹{file_path} b:{b}")
+
 time_prefix = int(time.time()/3600)
-imgs_dir = "/home/hyzh/下载/抽烟打电话数据集/抽烟打电话-华录杯/train/train/normal"
+imgs_dir = "/home/hyzh/DATA/手机采集/images"
 save_path = "/home/hyzh/lijie/data/crop_out"
 # save_path = "/home/hyzh/lijie/GitHub/V8/ultralytics/test_out"
+
+file_path_exists(save_path)
 
 if __name__ == '__main__': 
     model = YOLO("helmet_241009.pt")  # {0: 'personup', 1: 'persondown', 2: 'helmet', 3: 'nohelmet', 4: 'lanyard', 5: 'nolanyard'}

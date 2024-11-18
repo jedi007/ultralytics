@@ -106,7 +106,7 @@ def cap_video_crop(video_path, prefix):
             break
 
         frame_index += 1
-        if frame_index % 8 != 0:  # 每10帧检测一次
+        if frame_index % 16 != 0:  # 每10帧检测一次
             continue
 
         if frame_index % 500 == 0:

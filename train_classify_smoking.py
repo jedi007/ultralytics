@@ -4,7 +4,7 @@ from ultralytics import YOLO
 if __name__ == '__main__':  
     # 加载模型
     model = YOLO("yolov8m-cls.yaml")  # 从头开始构建新模型
-    model = YOLO("cls_calling_20241113.pt")  # 加载预训练模型（建议用于训练）
+    model = YOLO("yolov8m-cls.pt")  # 加载预训练模型（建议用于训练）
 
     # 修改配置文件中的类别
     # model.nc = len(model.names)  # 设置类别数量
