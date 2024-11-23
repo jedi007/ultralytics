@@ -149,7 +149,7 @@ save_path = "/home/hyzh/lijie/data/video_data/crop_out"
 file_path_exists(save_path)
 
 if __name__ == '__main__': 
-    model = YOLO("helmet_241009.pt")  # {0: 'personup', 1: 'persondown', 2: 'helmet', 3: 'nohelmet', 4: 'lanyard', 5: 'nolanyard'}
+    model = YOLO("det_personup_helmet_241119.pt")  # {0: 'personup', 1: 'persondown', 2: 'helmet', 3: 'nohelmet', 4: 'lanyard', 5: 'nolanyard'}
     
     im1 = cv2.imread("car.jpg")
     my_results = model(source=im1)

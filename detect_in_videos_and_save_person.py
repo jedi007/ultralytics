@@ -74,13 +74,24 @@ def cap_video_crop(video_path, prefix):
     print(f"{video_path} 视频读取完毕，解析裁剪结束")
 
 
+def file_path_exists(file_path):
+    if os.path.exists(file_path):
+        print(f"{file_path} 存在！")
+    else:
+        print(f"{file_path} 不存在！")
+        b = os.mkdir(file_path)
+        print(f"创建文件夹{file_path} b:{b}")
+
 # prefix = int(time.time()/3600)
 video_base_path = "/home/hyzh/lijie/data/video_data/in_videos"
+# video_base_path = "/home/hyzh/视频/ZSGL_20G_video"
 save_path = "/home/hyzh/lijie/data/video_data/crop_out"
 # save_path = "/home/hyzh/lijie/GitHub/V8/ultralytics/test_out"
 
+file_path_exists(save_path)
+
 if __name__ == '__main__': 
-    model = YOLO("helmet_241009.pt")  # {0: 'personup', 1: 'persondown', 2: 'helmet', 3: 'nohelmet', 4: 'lanyard', 5: 'nolanyard'}
+    model = YOLO("det_personup_helmet_241119.pt")  # {0: 'personup', 1: 'persondown', 2: 'helmet', 3: 'nohelmet', 4: 'lanyard', 5: 'nolanyard'}
     
     im1 = cv2.imread("car.jpg")
     my_results = model(source=im1)

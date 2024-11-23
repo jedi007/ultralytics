@@ -47,13 +47,23 @@ def one_img_crop(img_path, prefix, time_prefix):
         cv2.imwrite(f"{save_path}/{save_name}", croped_img)
 
 
+def file_path_exists(file_path):
+    if os.path.exists(file_path):
+        print(f"{file_path} 存在！")
+    else:
+        print(f"{file_path} 不存在！")
+        b = os.mkdir(file_path)
+        print(f"创建文件夹{file_path} b:{b}")
+
 time_prefix = int(time.time()/3600)
-imgs_dir = "/home/hyzh/cache/save_image"
-save_path = "/home/hyzh/cache/save_image_out"
+imgs_dir = "/home/hyzh/DATA/手机采集/images"
+save_path = "/home/hyzh/lijie/data/crop_out"
 # save_path = "/home/hyzh/lijie/GitHub/V8/ultralytics/test_out"
 
+file_path_exists(save_path)
+
 if __name__ == '__main__': 
-    model = YOLO("helmet_241009.pt")  # {0: 'personup', 1: 'persondown', 2: 'helmet', 3: 'nohelmet', 4: 'lanyard', 5: 'nolanyard'}
+    model = YOLO("det_personup_helmet_241119.pt")  # {0: 'personup', 1: 'persondown', 2: 'helmet', 3: 'nohelmet', 4: 'lanyard', 5: 'nolanyard'}
     
     im1 = cv2.imread("car.jpg")
     my_results = model(source=im1)

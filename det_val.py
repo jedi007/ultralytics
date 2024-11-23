@@ -1,7 +1,8 @@
 from ultralytics import YOLO
 
 # Load a model
-model = YOLO("helmet_241009.pt")
+# model = YOLO("helmet_241009.pt")
+model = YOLO("det_personup_helmet_241119.pt")
 
 # Train the model
 # train_results = model.train(
