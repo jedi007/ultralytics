@@ -1,0 +1,7 @@
+train: /home/hyzh/lijie/data/MyDataset/working_clothes/train # train images (relative to 'path') 1281167 images
+val: /home/hyzh/lijie/data/MyDataset/working_clothes/val # val images (relative to 'path') 50000 images
+
+# Classes
+names:
+  0: other_clothes
+  1: working_clothes

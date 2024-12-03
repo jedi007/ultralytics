@@ -23,7 +23,6 @@ wheels/
 pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 MANIFEST
 
@@ -138,7 +137,6 @@ dmypy.json
 .pyre/
 
 # datasets and projects
-datasets/
 runs/
 wandb/
 .DS_Store

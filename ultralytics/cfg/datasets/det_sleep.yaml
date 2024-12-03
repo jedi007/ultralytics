@@ -1,0 +1,6 @@
+train: /home/hyzh/lijie/data/det_sleep/det_sleep_yolo/train/images
+val: /home/hyzh/lijie/data/det_sleep/det_sleep_yolo/val/images
+
+
+nc: 2
+names: ['sleep','unsleep']

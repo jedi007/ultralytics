@@ -1,0 +1,7 @@
+train: /home/hyzh/lijie/data/MyDataset/reflect/train/images
+val: /home/hyzh/lijie/data/MyDataset/reflect/val/images
+
+nc: 2
+names:
+  0: no_Reflective-Jacket
+  1: Reflective-Jacket

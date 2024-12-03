@@ -1,0 +1,9 @@
+train: /home/hyzh/lijie/data/ReflectiveJacket/safety-Helmet-Reflective-Jacket/train/images
+val: /home/hyzh/lijie/data/ReflectiveJacket/safety-Helmet-Reflective-Jacket/valid/images
+test: /home/hyzh/lijie/data/ReflectiveJacket/safety-Helmet-Reflective-Jacket/test/images
+
+nc: 2
+# Classes
+names:
+  0: Safety-Helmet
+  1: Reflective-Jacket
