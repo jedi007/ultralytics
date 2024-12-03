@@ -69,10 +69,10 @@ def get_box_from_name(image_name:str, width, height):
     xarray = [x1,x2,x3,x4]
     yarray = [y1,y2,y3,y4]
 
-    min_x = min(xarray)
-    max_x = max(xarray)
-    min_y = min(yarray)
-    max_y = max(yarray)
+    min_x = max(min(xarray), 0)
+    max_x = min(max(xarray), width)
+    min_y = max(min(yarray), 0)
+    max_y = min(max(yarray), height)
 
     if min_x == -1 or min_y == -1:
         return "", (0 , 0, 0, 0)
@@ -130,6 +130,7 @@ if __name__ == "__main__":
         
         box = box_xyxy
         croped_img = copy.deepcopy(img[int(box[1]):int(box[3]), int(box[0]):int(box[2])])
+        print(f"box:{box}  filename:{file_name}")
         results = model(source=croped_img)
         is_car_plate = results[0].probs.top1 == 0
 
@@ -146,4 +147,3 @@ if __name__ == "__main__":
 
         if count % 100 == 0:
             print(f"{count} complete")
-            exit()
