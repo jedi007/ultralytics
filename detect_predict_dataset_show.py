@@ -32,10 +32,10 @@ def file_path_exists(file_path):
         print(f"创建文件夹{file_path} b:{b}")
 
 if __name__ == '__main__': 
-    model = YOLO("det_dangerousplate_best.pt")
+    model = YOLO("det_dangerous_plate_241205.pt")
     print("="*20)
 
-    imgs_dir = "/home/hyzh/DATA/car_plate/car_plate_det_data_241203/train/images"
+    imgs_dir = "/home/hyzh/DATA/car_plate/source/检测到危险牌out-筛选/dangerousplate/images"
     file_path_list = traverse_folder_filename(imgs_dir)
 
     count = 0

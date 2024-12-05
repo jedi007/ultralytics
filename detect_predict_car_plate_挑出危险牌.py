@@ -32,7 +32,7 @@ def file_path_exists(file_path):
         print(f"创建文件夹{file_path} b:{b}")
 
 if __name__ == '__main__': 
-    model = YOLO("det_dangerousplate_best.pt")
+    model = YOLO("det_dangerousplate_241204.pt")
     # accepts all formats - image/dir/Path/URL/video/PIL/ndarray. 0 for webcam
     # results = model.predict(source="0")
     # results = model.predict(source="/home/hyzh/DATA/car_plate/car_plate_det_data_241203/val/images", show=False, save=True)  # Display preds. Accepts all YOLO predict arguments
@@ -41,10 +41,10 @@ if __name__ == '__main__':
 
     print("="*20)
 
-    imgs_dir = "/home/hyzh/DATA/car_plate/car_plate_det_data_241203/val/images"
+    imgs_dir = "/home/hyzh/DATA/car_plate/car_plate_det_data_241203/train/images"
     file_path_list = traverse_folder_filename(imgs_dir)
 
-    out_dir = "/home/hyzh/DATA/car_plate/car_plate_det_data_241203/out"
+    out_dir = "/home/hyzh/DATA/car_plate/car_plate_det_data_241203/train/out"
     file_path_exists(out_dir)
 
     out_imgs = os.path.join(out_dir, "images")
@@ -58,7 +58,7 @@ if __name__ == '__main__':
 
         im1 = Image.open(img_path)
 
-        results = model.predict(source=im1)  # save plotted images
+        results = model.predict(source=im1, conf=0.01)  # save plotted images
         boxes = results[0].boxes
 
         b_dangerous = False
@@ -95,4 +95,5 @@ if __name__ == '__main__':
 
         count += 1
         if count % 100 == 0:
-            print(f"over count: {count}")
+            ss = "="*22
+            print(f"{ss}over count: {count}")
