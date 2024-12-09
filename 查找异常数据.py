@@ -41,7 +41,7 @@ def load_label_boxes(label_path: str, width: int, height: int):
         print(f"label文件不存在: {label_path}")
         return label_boxes
 
-    print("label_path: ", label_path)
+    # print("label_path: ", label_path)
 
     with open(label_path, 'r') as file:
         lines = file.readlines()
@@ -95,6 +95,7 @@ def checkout_boxes_number(pred_boxes, label_boxes):
     
     return True
 
+# 将预测的box和label的box进行一一匹配，一一都匹配上了则返回True.  当出现有大部分面积重叠的box时，可能会匹配错误。暂时忽略了这种情况。  计算iou匹配表可解决该问题，但计算量偏大
 def check_boxes_iou(pred_boxes, label_boxes, iou_threshold):  # 低于阈值的都算作预测错误  
     def calculate_box_iou(box1, box2): # box: x1, y1, x2, y2
         # Intersection area
@@ -117,12 +118,49 @@ def check_boxes_iou(pred_boxes, label_boxes, iou_threshold):  # 低于阈值的�
             continue
         
         for box1 in pred_boxes[cls_id]:
+            b_matched = False
             for box2 in label_boxes[cls_id]:
                 iou = calculate_box_iou(box1, box2)
 
                 if iou > iou_threshold:
-                    
+                    label_boxes[cls_id].remove(box2)  # 从label中删除已被匹配上的Box
+                    b_matched = True
+                    break
+            
+            if b_matched == False:
+                return False
+    
+    return True
 
+
+names = {0:"car_plate", 1: "dangerous_plate", 2: "calling", 3: "other_clothes", 4: "no_reflective_jacket"}
+colors = [(255,20,147), (106,90,205), (135,206,250), (60,179,113), (240,230,140), (255,99,71)]
+colors = [(B,G,R) for (R,G,B) in colors]
+show_size = (1600, 900)
+
+import numpy as np
+def show_boxes(img_path:str, boxes, title):
+    # 确保读取中文路径
+    file_bytes = np.fromfile(img_path, dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, -1) 
+    # img = cv2.imread(image)
+
+    for cls_id, boxes in enumerate(boxes):
+        if len(boxes) == 0:
+            continue
+
+        name = names[cls_id]
+        color=colors[cls_id]
+
+        for box in boxes:
+            cv2.rectangle(img, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), color, 2)
+            cv2.putText(img = img, text = name, org = (int(box[0]) + 5, int(box[1]) + 25), 
+                fontFace = cv2.FONT_HERSHEY_PLAIN, fontScale = 2, color=color, thickness=2)
+    
+    img_s = cv2.resize(img, show_size)
+    cv2.imshow(title, img_s)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
 
 if __name__ == '__main__': 
     print("===========start")
@@ -137,16 +175,25 @@ if __name__ == '__main__':
         label_path = os.path.join(labels_dir, f"{img_name[0:-4]}.txt")
 
         pred_boxes, width, height = get_pred_boxes(img_path)
-        print("pred_boxes: ", pred_boxes)
+        # print("pred_boxes: ", pred_boxes)
 
         label_boxes = load_label_boxes(label_path, width, height)
-        print("label_boxes: ", label_boxes)
+        # print("label_boxes: ", label_boxes)
         
         if not checkout_boxes_number(pred_boxes, label_boxes):
             print("pred_boxes, label_boxes shape 不相等")
 
-        check_boxes_iou(pred_boxes, label_boxes, 0.7)
-        exit()
+        if not check_boxes_iou(pred_boxes, label_boxes, 0.7):
+            print(f"pred error : {img_path}")
+            show_boxes(img_path, pred_boxes, "pred_boxes")
+            show_boxes(img_path, label_boxes, "label_boxes")
+            key = cv2.waitKey(0)
+            if(key & 0xFF == ord('q')):
+                exit()
+            # cv2.destroyAllWindows()
+        else:
+            print(f"pred and label matched : {img_path}")
+        # exit()
 
             
 

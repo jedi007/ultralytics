@@ -32,7 +32,7 @@ def file_path_exists(file_path):
         print(f"创建文件夹{file_path} b:{b}")
 
 if __name__ == '__main__': 
-    model = YOLO("det_dangerousplate_241204.pt")
+    model = YOLO("det_dangerous_plate_241205.pt")
     # accepts all formats - image/dir/Path/URL/video/PIL/ndarray. 0 for webcam
     # results = model.predict(source="0")
     # results = model.predict(source="/home/hyzh/DATA/car_plate/car_plate_det_data_241203/val/images", show=False, save=True)  # Display preds. Accepts all YOLO predict arguments
@@ -41,10 +41,10 @@ if __name__ == '__main__':
 
     print("="*20)
 
-    imgs_dir = "/home/hyzh/DATA/car_plate/car_plate_det_data_241203/train/images"
+    imgs_dir = "/home/hyzh/DATA/car_plate/source/检测到危险牌out-筛选/dangerousPlate_hard样本/dangerous/images"
     file_path_list = traverse_folder_filename(imgs_dir)
 
-    out_dir = "/home/hyzh/DATA/car_plate/car_plate_det_data_241203/train/out"
+    out_dir = "/home/hyzh/DATA/car_plate/source/检测到危险牌out-筛选/dangerousPlate_hard样本/dangerous/out2"
     file_path_exists(out_dir)
 
     out_imgs = os.path.join(out_dir, "images")
