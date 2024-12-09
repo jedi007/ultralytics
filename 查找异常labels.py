@@ -31,7 +31,7 @@ def file_path_exists(file_path):
         b = os.mkdir(file_path)
         print(f"创建文件夹{file_path} b:{b}")
 
-def load_label_boxes(label_path: str, width: int, height: int):
+def load_label_boxes(label_path: str, width: int, height: int): # label file format: x,y,w,h 
     label_boxes = []
     for i in range(0,10):
         label_boxes.append([])
@@ -138,6 +138,14 @@ colors = [(255,20,147), (106,90,205), (135,206,250), (60,179,113), (240,230,140)
 colors = [(B,G,R) for (R,G,B) in colors]
 show_size = (1600, 900)
 
+def xyxy2xywhn(box, width, height):
+    w = box[2] - box[0]
+    h = box[3] - box[1]
+    cx = box[0] + w/2
+    cy = box[1] + h/2
+
+    return cx/width, cy/height, w/width, h/height 
+
 import numpy as np
 def show_boxes(img_path:str, boxes, title):
     # 确保读取中文路径
@@ -163,10 +171,11 @@ def show_boxes(img_path:str, boxes, title):
     # cv2.destroyAllWindows()
 
 b_need_show_error_img = False
+merge_label_then_out = True  # 融合label Box 和 pred box 到新的label文件q
 
 if __name__ == '__main__': 
     print("===========start")
-    work_dir = R'''/home/hyzh/DATA/car_plate/source/筛选-危险牌/dangerousplate'''
+    work_dir = R'''/home/hyzh/DATA/car_plate/source/筛选-危险牌/dangerousplate/out'''
 
     output_dir = f'''{work_dir}/out'''
     file_path_exists(output_dir)
@@ -212,7 +221,33 @@ if __name__ == '__main__':
                 # cv2.destroyAllWindows()
 
             shutil.move(img_path, out_imgs_dir)
-            shutil.move(label_path, out_labels_dir)
+
+            if merge_label_then_out:
+                out_label_path = os.path.join(out_labels_dir, f"{img_name[0:-4]}.txt")
+
+                labels_str = ""
+                for cls_id, boxes in enumerate(label_boxes):
+                    for box in boxes:
+                        cx, cy, w, h = xyxy2xywhn(box, width, height)
+                        if labels_str == "":
+                            labels_str = f"{cls_id} {cx} {cy} {w} {h}"
+                        else:
+                            labels_str += f"\n{cls_id} {cx} {cy} {w} {h}"
+                
+                for cls_id, boxes in enumerate(pred_boxes):
+                    for box in boxes:
+                        cx, cy, w, h = xyxy2xywhn(box, width, height)
+                        if labels_str == "":
+                            labels_str = f"{cls_id} {cx} {cy} {w} {h}"
+                        else:
+                            labels_str += f"\n{cls_id} {cx} {cy} {w} {h}"
+                
+                with open(out_label_path, 'w') as file:
+                    file.write(labels_str)
+                    file.close()
+
+            else:
+                shutil.move(label_path, out_labels_dir)
 
         if count % 100 == 0:
             ss = "="*22
