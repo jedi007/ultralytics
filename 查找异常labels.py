@@ -166,16 +166,17 @@ b_need_show_error_img = False
 
 if __name__ == '__main__': 
     print("===========start")
+    work_dir = R'''/home/hyzh/DATA/car_plate/source/筛选-危险牌/dangerousplate'''
 
-    output_dir = R'''/home/hyzh/DATA/car_plate/source/筛选-危险牌/dangerousplate/out'''
+    output_dir = f'''{work_dir}/out'''
     file_path_exists(output_dir)
     out_imgs_dir = os.path.join(output_dir, "images")
     out_labels_dir = os.path.join(output_dir, "labels")
     file_path_exists(out_imgs_dir)
     file_path_exists(out_labels_dir)
 
-    imgs_dir = "/home/hyzh/DATA/car_plate/source/筛选-危险牌/dangerousplate/images"
-    labels_dir = "/home/hyzh/DATA/car_plate/source/筛选-危险牌/dangerousplate/labels"
+    imgs_dir = f"{work_dir}/images"
+    labels_dir = f"{work_dir}/labels"
     file_path_list = traverse_folder_filename(imgs_dir)
 
 
