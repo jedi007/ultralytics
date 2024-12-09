@@ -162,12 +162,22 @@ def show_boxes(img_path:str, boxes, title):
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
 
+b_need_show_error_img = False
+
 if __name__ == '__main__': 
     print("===========start")
+
+    output_dir = R'''/home/hyzh/DATA/car_plate/source/筛选-危险牌/dangerousplate/out'''
+    file_path_exists(output_dir)
+    out_imgs_dir = os.path.join(output_dir, "images")
+    out_labels_dir = os.path.join(output_dir, "labels")
+    file_path_exists(out_imgs_dir)
+    file_path_exists(out_labels_dir)
 
     imgs_dir = "/home/hyzh/DATA/car_plate/source/筛选-危险牌/dangerousplate/images"
     labels_dir = "/home/hyzh/DATA/car_plate/source/筛选-危险牌/dangerousplate/labels"
     file_path_list = traverse_folder_filename(imgs_dir)
+
 
     count = 0
     for img_name in file_path_list:
@@ -180,24 +190,28 @@ if __name__ == '__main__':
         label_boxes = load_label_boxes(label_path, width, height)
         # print("label_boxes: ", label_boxes)
         
+        b_error_label = False
         if not checkout_boxes_number(pred_boxes, label_boxes):
-            print("pred_boxes, label_boxes shape 不相等")
+            print(f"pred_boxes, label_boxes shape 不相等 : {img_name}")
+            b_error_label = True
 
-        if not check_boxes_iou(pred_boxes, label_boxes, 0.7):
-            print(f"pred error : {img_path}")
-            show_boxes(img_path, pred_boxes, "pred_boxes")
-            show_boxes(img_path, label_boxes, "label_boxes")
-            key = cv2.waitKey(0)
-            if(key & 0xFF == ord('q')):
-                exit()
-            # cv2.destroyAllWindows()
+        if not b_error_label and not check_boxes_iou(pred_boxes, label_boxes, 0.7):
+            print(f"label iou error : {img_name}")
+            b_error_label = True
         else:
-            print(f"pred and label matched : {img_path}")
-        # exit()
+            print(f"pred and label matched : {img_name}")
+        
+        if b_error_label:
+            if b_need_show_error_img:
+                show_boxes(img_path, pred_boxes, "pred_boxes")
+                show_boxes(img_path, label_boxes, "label_boxes")
+                key = cv2.waitKey(0)
+                if(key & 0xFF == ord('q')):
+                    exit()
+                # cv2.destroyAllWindows()
 
-            
-
-
+            shutil.move(img_path, out_imgs_dir)
+            shutil.move(label_path, out_labels_dir)
 
         if count % 100 == 0:
             ss = "="*22
