@@ -3,6 +3,9 @@ from PIL import Image
 from ultralytics import YOLO
 import os
 import shutil
+from copy import deepcopy
+
+model = YOLO("det_dangerous_plate_241205.pt")
 
 def traverse_folder(folder_path):
     file_list = []
@@ -65,11 +68,11 @@ def load_label_boxes(label_path: str, width: int, height: int): # label file for
     
     return label_boxes
 
-model = YOLO("det_dangerous_plate_241205.pt")
+
 def get_pred_boxes(img_path: str):
     im1 = Image.open(img_path)
 
-    results = model.predict(source=im1, conf = 0.3)  # save plotted images
+    results = model.predict(source=im1, conf = 0.2)  # save plotted images
 
     boxes = results[0].boxes
     # print("boxes: ", boxes)
@@ -95,24 +98,24 @@ def checkout_boxes_number(pred_boxes, label_boxes):
     
     return True
 
+def calculate_box_iou(box1, box2): # box: x1, y1, x2, y2
+    # Intersection area
+    inter_w = max((min(box1[2], box2[2]) - max(box1[0], box2[0])), 0)
+    inter_h = max((min(box1[3], box2[3]) - max(box1[1], box2[1])), 0)
+    inter = inter_w * inter_h
+
+    def calculate_box_area(box):
+        return (box[2] - box[0]) * (box[3] - box[1])
+
+    eps = 1e-7
+    union = calculate_box_area(box1) + calculate_box_area(box2) - inter + eps
+
+    iou = inter / union
+
+    return iou
+
 # 将预测的box和label的box进行一一匹配，一一都匹配上了则返回True.  当出现有大部分面积重叠的box时，可能会匹配错误。暂时忽略了这种情况。  计算iou匹配表可解决该问题，但计算量偏大
-def check_boxes_iou(pred_boxes, label_boxes, iou_threshold):  # 低于阈值的都算作预测错误  
-    def calculate_box_iou(box1, box2): # box: x1, y1, x2, y2
-        # Intersection area
-        inter_w = max((min(box1[2], box2[2]) - max(box1[0], box2[0])), 0)
-        inter_h = max((min(box1[3], box2[3]) - max(box1[1], box2[1])), 0)
-        inter = inter_w * inter_h
-
-        def calculate_box_area(box):
-            return (box[2] - box[0]) * (box[3] - box[1])
-
-        eps = 1e-7
-        union = calculate_box_area(box1) + calculate_box_area(box2) - inter + eps
-
-        iou = inter / union
-
-        return iou
-    
+def check_boxes_iou(pred_boxes, label_boxes, iou_threshold):  # 低于阈值的都算作预测错误      
     for cls_id in range(0, len(pred_boxes)):
         if len(pred_boxes[cls_id]) == 0:
             continue
@@ -170,12 +173,33 @@ def show_boxes(img_path:str, boxes, title):
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
 
+
+def merge_boxes(label_boxes, pred_boxes, iou_threshold = 0.5):  # 高于阈值的进行删除，不合并
+    def box_is_in_boxes(box1, boxes, iou_threshold):
+        for box2 in boxes:
+            iou = calculate_box_iou(box1, box2)
+            if iou > iou_threshold:
+                return True
+        
+        return False
+
+    merged_boxes = deepcopy(label_boxes)
+    
+    for cls_id, boxes in enumerate(pred_boxes):
+        for box in boxes:
+            if not box_is_in_boxes(box, label_boxes[cls_id], iou_threshold):
+                merged_boxes[cls_id].append(box)
+    
+    return merged_boxes
+
+
+
 b_need_show_error_img = False
 merge_label_then_out = True  # 融合label Box 和 pred box 到新的label文件q
 
 if __name__ == '__main__': 
     print("===========start")
-    work_dir = R'''/home/hyzh/DATA/car_plate/source/2-org/2-org'''
+    work_dir = R'''/home/hyzh/DATA/car_plate/DangerousPlate_yolotxt2/train'''
 
     output_dir = f'''{work_dir}/out'''
     file_path_exists(output_dir)
@@ -192,8 +216,11 @@ if __name__ == '__main__':
 
     count = 0
     for img_name in file_path_list:
-        img_path = os.path.join(imgs_dir, img_name)
+        img_path = os.path.join(imgs_dir, f"{img_name[0:-4]}.jpg")
         label_path = os.path.join(labels_dir, f"{img_name[0:-4]}.txt")
+
+        if not os.path.exists(img_path):
+            continue
 
         pred_boxes, width, height = get_pred_boxes(img_path)
         # print("pred_boxes: ", pred_boxes)
@@ -210,7 +237,8 @@ if __name__ == '__main__':
             print(f"label iou error : {img_name}")
             b_error_label = True
         else:
-            print(f"pred and label matched : {img_name}")
+            # print(f"pred and label matched : {img_name}")
+            pass
         
         if b_error_label:
             if b_need_show_error_img:
@@ -221,25 +249,20 @@ if __name__ == '__main__':
                     exit()
                 # cv2.destroyAllWindows()
 
-            shutil.move(img_path, out_imgs_dir)
-
             count += 1
             if count % 100 == 2:
                 print(f"进度: {count}/{total_size}")
+            
+            # if count == 10:
+            #     exit()
 
             if merge_label_then_out:
                 out_label_path = os.path.join(out_labels_dir, f"{img_name[0:-4]}.txt")
 
+                merged_boxes = merge_boxes(label_boxes, pred_boxes, 0.5)
+
                 labels_str = ""
-                for cls_id, boxes in enumerate(label_boxes):
-                    for box in boxes:
-                        cx, cy, w, h = xyxy2xywhn(box, width, height)
-                        if labels_str == "":
-                            labels_str = f"{cls_id} {cx} {cy} {w} {h}"
-                        else:
-                            labels_str += f"\n{cls_id} {cx} {cy} {w} {h}"
-                
-                for cls_id, boxes in enumerate(pred_boxes):
+                for cls_id, boxes in enumerate(merged_boxes):
                     for box in boxes:
                         cx, cy, w, h = xyxy2xywhn(box, width, height)
                         if labels_str == "":
@@ -252,9 +275,6 @@ if __name__ == '__main__':
                     file.close()
                     # exit()
 
+                shutil.move(img_path, out_imgs_dir)
             else:
                 shutil.move(label_path, out_labels_dir)
-
-        if count % 100 == 0:
-            ss = "="*22
-            print(f"{ss}over count: {count}")
