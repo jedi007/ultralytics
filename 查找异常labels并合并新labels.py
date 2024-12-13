@@ -199,7 +199,7 @@ merge_label_then_out = True  # 融合label Box 和 pred box 到新的label文件
 
 if __name__ == '__main__': 
     print("===========start")
-    work_dir = R'''/home/hyzh/DATA/car_plate/source/黄蓝绿白车牌预标注_带关键点/黄色车牌'''
+    work_dir = R'''/home/hyzh/DATA/car_plate/source/黄蓝绿白车牌预标注_带关键点/白色车牌'''
 
     output_dir = f'''{work_dir}/out'''
     file_path_exists(output_dir)
@@ -212,11 +212,13 @@ if __name__ == '__main__':
     labels_dir = f"{work_dir}/labels"
     file_path_list = traverse_folder_filename(imgs_dir)
 
+    print("files: ", file_path_list[0:3])
+
     total_size = len(file_path_list)
 
     count = 0
     for img_name in file_path_list:
-        img_path = os.path.join(imgs_dir, f"{img_name[0:-4]}.jpg")
+        img_path = os.path.join(imgs_dir, img_name)
         label_path = os.path.join(labels_dir, f"{img_name[0:-4]}.txt")
 
         if not os.path.exists(img_path):
@@ -273,6 +275,7 @@ if __name__ == '__main__':
                 with open(out_label_path, 'w') as file:
                     file.write(labels_str)
                     file.close()
+                    # print("write labels: ", labels_str)
                     # exit()
 
                 shutil.move(img_path, out_imgs_dir)
