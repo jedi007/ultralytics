@@ -42,7 +42,7 @@ def get_box_from_name(image_name:str, width, height):
     words = image_name.split("_")
     # print("words: ", words)
 
-    if len(words) != 5 :
+    if len(words) != 6 :
         print(f"image:{image_name} name format error!")
         return "", (0 , 0, 0, 0)
     
@@ -61,10 +61,10 @@ def get_box_from_name(image_name:str, width, height):
         
         return x,y
     
-    x1,y1 = get_xy(words[1])
-    x2,y2 = get_xy(words[2])
-    x3,y3 = get_xy(words[3])
-    x4,y4 = get_xy(words[4])
+    x1,y1 = get_xy(words[2])
+    x2,y2 = get_xy(words[3])
+    x3,y3 = get_xy(words[4])
+    x4,y4 = get_xy(words[5])
     
     xarray = [x1,x2,x3,x4]
     yarray = [y1,y2,y3,y4]
@@ -94,15 +94,16 @@ def get_box_from_name(image_name:str, width, height):
 if __name__ == "__main__":
     model = YOLO("cls_car_plate_e8.pt")  # {0: 'personup', 1: 'persondown', 2: 'helmet', 3: 'nohelmet', 4: 'lanyard', 5: 'nolanyard'}
     
-    im1 = cv2.imread("/home/hyzh/DATA/car_plate/2_cls_data/val/error_car_plate/苏H1H111_898.480103&540.168518_1261.066772&498.508484_1245.361084&581.043091_890.477478&632.798767-1-random.jpg")
-    im2 = cv2.imread("/home/hyzh/DATA/car_plate/2_cls_data/val/car_plate/川GA5917_1671.002686&128.159683_1747.115112&130.361847_1746.616455&156.620956_1670.413696&154.480362-1.jpg")
-    results = model(source=[im1, im2])
-    print("results 0: ", results[0].probs.top1)
-    print("results 1: ", results[1].probs.top1)
+    # im1 = cv2.imread("/home/hyzh/DATA/car_plate/2_cls_data/val/error_car_plate/苏H1H111_898.480103&540.168518_1261.066772&498.508484_1245.361084&581.043091_890.477478&632.798767-1-random.jpg")
+    # im2 = cv2.imread("/home/hyzh/DATA/car_plate/2_cls_data/val/car_plate/川GA5917_1671.002686&128.159683_1747.115112&130.361847_1746.616455&156.620956_1670.413696&154.480362-1.jpg")
+    # results = model(source=[im1, im2])
+    # print("results 0: ", results[0].probs.top1)
+    # print("results 1: ", results[1].probs.top1)
 
+    work_dir = R'''/home/hyzh/DATA/car_plate/source/1/车牌分类9428张/绿色车牌''' 
 
-    source_dir = R'''/home/hyzh/DATA/car_plate/2/images'''
-    output_dir = R'''/home/hyzh/DATA/car_plate/2/labels''' # 资源来源目录
+    source_dir = f"{work_dir}/images"
+    output_dir = f"{work_dir}/labels" # 资源来源目录
 
     file_path_exists(output_dir)
 
