@@ -32,17 +32,17 @@ def file_path_exists(file_path):
         print(f"创建文件夹{file_path} b:{b}")
 
 if __name__ == '__main__': 
-    model = YOLO("det_dangerous_plate_241205.pt")
+    model = YOLO("det_dangerousplate_e3_241213.pt")
     print("="*20)
 
-    imgs_dir = "/home/hyzh/DATA/car_plate/source/检测到危险牌out-筛选/dangerousplate/images"
+    imgs_dir = "/home/hyzh/DATA/car_plate/source/1/车牌分类9428张/黄色车牌"
     file_path_list = traverse_folder_filename(imgs_dir)
 
     count = 0
     for img_name in file_path_list:
         count += 1
-        if count % 20 != 0:
-            continue
+        # if count % 20 != 0:
+        #     continue
 
         img_path = os.path.join(imgs_dir, img_name)
 
@@ -69,7 +69,7 @@ if __name__ == '__main__':
             cv2.imshow("show_img_results", opencv_image)
             
             #等待键盘事件，如果为q，退出
-            key = cv2.waitKey(0)
+            key = cv2.waitKey(30000)
             if(key & 0xFF == ord('q')):
                 cv2.destroyAllWindows()
                 exit()

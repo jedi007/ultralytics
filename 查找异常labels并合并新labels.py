@@ -5,7 +5,7 @@ import os
 import shutil
 from copy import deepcopy
 
-model = YOLO("det_dangerous_plate_241205.pt")
+model = YOLO("det_dangerousplate_e3_241213.pt")
 
 def traverse_folder(folder_path):
     file_list = []
@@ -199,7 +199,7 @@ merge_label_then_out = True  # 融合label Box 和 pred box 到新的label文件
 
 if __name__ == '__main__': 
     print("===========start")
-    work_dir = R'''/home/hyzh/DATA/car_plate/DangerousPlate_yolotxt2/train'''
+    work_dir = R'''/home/hyzh/DATA/car_plate/source/黄蓝绿白车牌预标注_带关键点/黄色车牌'''
 
     output_dir = f'''{work_dir}/out'''
     file_path_exists(output_dir)
@@ -233,7 +233,7 @@ if __name__ == '__main__':
             print(f"pred_boxes, label_boxes shape 不相等 : {img_name}")
             b_error_label = True
 
-        if not b_error_label and not check_boxes_iou(pred_boxes, label_boxes, 0.7):
+        if not b_error_label and not check_boxes_iou(pred_boxes, deepcopy(label_boxes), 0.7):
             print(f"label iou error : {img_name}")
             b_error_label = True
         else:
