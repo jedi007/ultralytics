@@ -5,7 +5,7 @@ import os
 import shutil
 from copy import deepcopy
 
-model = YOLO("det_dangerousplate_e3_241213.pt")
+model = YOLO("det_dangerousplate_241217.pt")
 
 def traverse_folder(folder_path):
     file_list = []
@@ -199,14 +199,21 @@ merge_label_then_out = True  # 融合label Box 和 pred box 到新的label文件
 
 if __name__ == '__main__': 
     print("===========start")
-    work_dir = R'''/home/hyzh/DATA/car_plate/source/黄蓝绿白车牌预标注_带关键点/白色车牌'''
+    work_dir = R'''/home/hyzh/DATA/car_plate'''
 
-    output_dir = f'''{work_dir}/out'''
+    output_dir = f'''{work_dir}/iou_out'''
     file_path_exists(output_dir)
     out_imgs_dir = os.path.join(output_dir, "images")
     out_labels_dir = os.path.join(output_dir, "labels")
     file_path_exists(out_imgs_dir)
     file_path_exists(out_labels_dir)
+
+    shape_out_dir = f'''{work_dir}/shape_out'''
+    file_path_exists(shape_out_dir)
+    shape_out_imgs_dir = os.path.join(shape_out_dir, "images")
+    shape_out_labels_dir = os.path.join(shape_out_dir, "labels")
+    file_path_exists(shape_out_imgs_dir)
+    file_path_exists(shape_out_labels_dir)
 
     imgs_dir = f"{work_dir}/images"
     labels_dir = f"{work_dir}/labels"
@@ -218,7 +225,7 @@ if __name__ == '__main__':
 
     count = 0
     for img_name in file_path_list:
-        img_path = os.path.join(imgs_dir, img_name)
+        img_path = os.path.join(imgs_dir, f"{img_name[0:-4]}.jpg")
         label_path = os.path.join(labels_dir, f"{img_name[0:-4]}.txt")
 
         if not os.path.exists(img_path):
@@ -230,19 +237,44 @@ if __name__ == '__main__':
         label_boxes = load_label_boxes(label_path, width, height)
         # print("label_boxes: ", label_boxes)
         
-        b_error_label = False
+        
         if not checkout_boxes_number(pred_boxes, label_boxes):
             print(f"pred_boxes, label_boxes shape 不相等 : {img_name}")
-            b_error_label = True
 
-        if not b_error_label and not check_boxes_iou(pred_boxes, deepcopy(label_boxes), 0.7):
+            if merge_label_then_out:
+                out_label_path = os.path.join(shape_out_labels_dir, f"{img_name[0:-4]}.txt")
+
+                merged_boxes = merge_boxes(label_boxes, pred_boxes, 0.5)
+
+                labels_str = ""
+                for cls_id, boxes in enumerate(merged_boxes):
+                    for box in boxes:
+                        cx, cy, w, h = xyxy2xywhn(box, width, height)
+                        if labels_str == "":
+                            labels_str = f"{cls_id} {cx} {cy} {w} {h}"
+                        else:
+                            labels_str += f"\n{cls_id} {cx} {cy} {w} {h}"
+                
+                with open(out_label_path, 'w') as file:
+                    file.write(labels_str)
+                    file.close()
+                    # print("write labels: ", labels_str)
+                    # exit()
+
+                shutil.move(img_path, shape_out_imgs_dir)
+            else:
+                shutil.move(label_path, shape_out_labels_dir)
+                shutil.move(img_path, shape_out_imgs_dir)
+            
+            continue
+
+
+
+
+
+        if not check_boxes_iou(pred_boxes, deepcopy(label_boxes), 0.7):
             print(f"label iou error : {img_name}")
-            b_error_label = True
-        else:
-            # print(f"pred and label matched : {img_name}")
-            pass
         
-        if b_error_label:
             if b_need_show_error_img:
                 show_boxes(img_path, pred_boxes, "pred_boxes")
                 show_boxes(img_path, label_boxes, "label_boxes")
@@ -281,3 +313,4 @@ if __name__ == '__main__':
                 shutil.move(img_path, out_imgs_dir)
             else:
                 shutil.move(label_path, out_labels_dir)
+                shutil.move(img_path, out_imgs_dir)
