@@ -5,7 +5,7 @@ import os
 import shutil
 from copy import deepcopy
 
-model = YOLO("det_dangerousplate_241217.pt")
+model = YOLO("det_personup_helmet_241119.pt")
 
 def traverse_folder(folder_path):
     file_list = []
@@ -69,7 +69,7 @@ def load_label_boxes(label_path: str, width: int, height: int): # label file for
     return label_boxes
 
 
-def get_pred_boxes(img_path: str):
+def get_pred_boxes(img_path: str, filter_classes):
     im1 = Image.open(img_path)
 
     results = model.predict(source=im1, conf = 0.2)  # save plotted images
@@ -87,14 +87,16 @@ def get_pred_boxes(img_path: str):
     for obj_index in range(len(boxes.cls)):
         cls_id = int(boxes.cls[obj_index].item())
 
-        pred_boxes[cls_id].append(xyxys[obj_index])
+        if cls_id in filter_classes:
+            pred_boxes[cls_id].append(xyxys[obj_index])
     
     return pred_boxes, width, height
 
-def checkout_boxes_number(pred_boxes, label_boxes):
+def checkout_boxes_number(pred_boxes, label_boxes, filter_classes):
     for i in range(0, len(pred_boxes)):
-        if len(pred_boxes[i]) != len(label_boxes[i]):
-            return False
+        if i in filter_classes:
+            if len(pred_boxes[i]) != len(label_boxes[i]):
+                return False
     
     return True
 
@@ -115,23 +117,24 @@ def calculate_box_iou(box1, box2): # box: x1, y1, x2, y2
     return iou
 
 # 将预测的box和label的box进行一一匹配，一一都匹配上了则返回True.  当出现有大部分面积重叠的box时，可能会匹配错误。暂时忽略了这种情况。  计算iou匹配表可解决该问题，但计算量偏大
-def check_boxes_iou(pred_boxes, label_boxes, iou_threshold):  # 低于阈值的都算作预测错误      
+def check_boxes_iou(pred_boxes, label_boxes, iou_threshold, filter_classes):  # 低于阈值的都算作预测错误      
     for cls_id in range(0, len(pred_boxes)):
         if len(pred_boxes[cls_id]) == 0:
             continue
-        
-        for box1 in pred_boxes[cls_id]:
-            b_matched = False
-            for box2 in label_boxes[cls_id]:
-                iou = calculate_box_iou(box1, box2)
 
-                if iou > iou_threshold:
-                    label_boxes[cls_id].remove(box2)  # 从label中删除已被匹配上的Box
-                    b_matched = True
-                    break
-            
-            if b_matched == False:
-                return False
+        if cls_id in filter_classes:
+            for box1 in pred_boxes[cls_id]:
+                b_matched = False
+                for box2 in label_boxes[cls_id]:
+                    iou = calculate_box_iou(box1, box2)
+
+                    if iou > iou_threshold:
+                        label_boxes[cls_id].remove(box2)  # 从label中删除已被匹配上的Box
+                        b_matched = True
+                        break
+                
+                if b_matched == False:
+                    return False
     
     return True
 
@@ -196,10 +199,11 @@ def merge_boxes(label_boxes, pred_boxes, iou_threshold = 0.5):  # 高于阈值�
 
 b_need_show_error_img = False
 merge_label_then_out = True  # 融合label Box 和 pred box 到新的label文件q
+filter_classes = [0] # 仅对关注的类别进行处理
 
 if __name__ == '__main__': 
     print("===========start")
-    work_dir = R'''/home/hyzh/DATA/car_plate'''
+    work_dir = R'''/home/hyzh/DATA/train_data/det_data_add_zsgl/val'''
 
     output_dir = f'''{work_dir}/iou_out'''
     file_path_exists(output_dir)
@@ -231,14 +235,14 @@ if __name__ == '__main__':
         if not os.path.exists(img_path):
             continue
 
-        pred_boxes, width, height = get_pred_boxes(img_path)
+        pred_boxes, width, height = get_pred_boxes(img_path, filter_classes)
         # print("pred_boxes: ", pred_boxes)
 
         label_boxes = load_label_boxes(label_path, width, height)
         # print("label_boxes: ", label_boxes)
         
         
-        if not checkout_boxes_number(pred_boxes, label_boxes):
+        if not checkout_boxes_number(pred_boxes, label_boxes, filter_classes):
             print(f"pred_boxes, label_boxes shape 不相等 : {img_name}")
 
             if merge_label_then_out:
@@ -272,7 +276,7 @@ if __name__ == '__main__':
 
 
 
-        if not check_boxes_iou(pred_boxes, deepcopy(label_boxes), 0.7):
+        if not check_boxes_iou(pred_boxes, deepcopy(label_boxes), 0.3, filter_classes):
             print(f"label iou error : {img_name}")
         
             if b_need_show_error_img:
