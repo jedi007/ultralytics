@@ -116,27 +116,26 @@ def calculate_box_iou(box1, box2): # box: x1, y1, x2, y2
 
     return iou
 
-# 将预测的box和label的box进行一一匹配，一一都匹配上了则返回True.  当出现有大部分面积重叠的box时，可能会匹配错误。暂时忽略了这种情况。  计算iou匹配表可解决该问题，但计算量偏大
-def check_boxes_iou(pred_boxes, label_boxes, iou_threshold, filter_classes):  # 低于阈值的都算作预测错误      
-    for cls_id in range(0, len(pred_boxes)):
-        if len(pred_boxes[cls_id]) == 0:
+# 将预测的box和label的box进行一一匹配
+def check_boxes_iou(pred_boxes, label_boxes, iou_threshold, filter_classes):  # 有一个匹配上就算通过 
+    all_empty = True
+    for cls_id in filter_classes:
+        if len(pred_boxes[cls_id]) == 0 and len(label_boxes[cls_id]) == 0:
             continue
 
-        if cls_id in filter_classes:
-            for box1 in pred_boxes[cls_id]:
-                b_matched = False
-                for box2 in label_boxes[cls_id]:
-                    iou = calculate_box_iou(box1, box2)
+        all_empty = False
 
-                    if iou > iou_threshold:
-                        label_boxes[cls_id].remove(box2)  # 从label中删除已被匹配上的Box
-                        b_matched = True
-                        break
-                
-                if b_matched == False:
-                    return False
+        for box1 in pred_boxes[cls_id]:
+            for box2 in label_boxes[cls_id]:
+                iou = calculate_box_iou(box1, box2)
+
+                if iou > iou_threshold:
+                    return True
     
-    return True
+    if all_empty == True:
+        return True
+    else:
+        return False
 
 
 names = {0:"car_plate", 1: "dangerous_plate", 2: "calling", 3: "other_clothes", 4: "no_reflective_jacket"}
@@ -201,23 +200,18 @@ b_need_show_error_img = False
 merge_label_then_out = True  # 融合label Box 和 pred box 到新的label文件q
 filter_classes = [0] # 仅对关注的类别进行处理
 
+
+#用于查找标注和推理一个都匹配不上的labels
 if __name__ == '__main__': 
     print("===========start")
-    work_dir = R'''/home/hyzh/DATA/train_data/det_data_add_zsgl/val'''
+    work_dir = R'''/home/hyzh/DATA/train_data/det_data_add_zsgl/train'''
 
-    output_dir = f'''{work_dir}/iou_out'''
+    output_dir = f'''{work_dir}/error_label_out'''
     file_path_exists(output_dir)
     out_imgs_dir = os.path.join(output_dir, "images")
     out_labels_dir = os.path.join(output_dir, "labels")
     file_path_exists(out_imgs_dir)
     file_path_exists(out_labels_dir)
-
-    shape_out_dir = f'''{work_dir}/shape_out'''
-    file_path_exists(shape_out_dir)
-    shape_out_imgs_dir = os.path.join(shape_out_dir, "images")
-    shape_out_labels_dir = os.path.join(shape_out_dir, "labels")
-    file_path_exists(shape_out_imgs_dir)
-    file_path_exists(shape_out_labels_dir)
 
     imgs_dir = f"{work_dir}/images"
     labels_dir = f"{work_dir}/labels"
@@ -235,48 +229,17 @@ if __name__ == '__main__':
         if not os.path.exists(img_path):
             continue
 
+        print("img_path: ", img_path)
+
         pred_boxes, width, height = get_pred_boxes(img_path, filter_classes)
         # print("pred_boxes: ", pred_boxes)
 
         label_boxes = load_label_boxes(label_path, width, height)
         # print("label_boxes: ", label_boxes)
-        
-        
-        if not checkout_boxes_number(pred_boxes, label_boxes, filter_classes):
-            print(f"pred_boxes, label_boxes shape 不相等 : {img_name}")
-
-            if merge_label_then_out:
-                out_label_path = os.path.join(shape_out_labels_dir, f"{img_name[0:-4]}.txt")
-
-                merged_boxes = merge_boxes(label_boxes, pred_boxes, 0.5)
-
-                labels_str = ""
-                for cls_id, boxes in enumerate(merged_boxes):
-                    for box in boxes:
-                        cx, cy, w, h = xyxy2xywhn(box, width, height)
-                        if labels_str == "":
-                            labels_str = f"{cls_id} {cx} {cy} {w} {h}"
-                        else:
-                            labels_str += f"\n{cls_id} {cx} {cy} {w} {h}"
-                
-                with open(out_label_path, 'w') as file:
-                    file.write(labels_str)
-                    file.close()
-                    # print("write labels: ", labels_str)
-                    # exit()
-
-                shutil.move(img_path, shape_out_imgs_dir)
-            else:
-                shutil.move(label_path, shape_out_labels_dir)
-                shutil.move(img_path, shape_out_imgs_dir)
-            
-            continue
 
 
 
-
-
-        if not check_boxes_iou(pred_boxes, deepcopy(label_boxes), 0.3, filter_classes):
+        if not check_boxes_iou(pred_boxes, deepcopy(label_boxes), 0.5, filter_classes):
             print(f"label iou error : {img_name}")
         
             if b_need_show_error_img:
