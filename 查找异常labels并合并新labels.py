@@ -5,7 +5,7 @@ import os
 import shutil
 from copy import deepcopy
 
-model = YOLO("det_personup_helmet_241119.pt")
+model = YOLO("det_personup_helmet_250107.pt")
 
 def traverse_folder(folder_path):
     file_list = []
@@ -199,11 +199,11 @@ def merge_boxes(label_boxes, pred_boxes, iou_threshold = 0.5):  # 高于阈值�
 
 b_need_show_error_img = False
 merge_label_then_out = True  # 融合label Box 和 pred box 到新的label文件q
-filter_classes = [0] # 仅对关注的类别进行处理
+filter_classes = [0,1,2,3,4,5,6,7,8] # 仅对关注的类别进行处理
 
 if __name__ == '__main__': 
     print("===========start")
-    work_dir = R'''/home/hyzh/DATA/train_data/det_data_add_zsgl/val'''
+    work_dir = R'''/data/batch2'''
 
     output_dir = f'''{work_dir}/iou_out'''
     file_path_exists(output_dir)

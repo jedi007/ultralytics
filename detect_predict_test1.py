@@ -3,14 +3,14 @@ from PIL import Image
 from ultralytics import YOLO
 
 if __name__ == '__main__': 
-    model = YOLO("yolov8n.pt")
+    model = YOLO("det_dangerousplate_250122_2.pt")
     # accepts all formats - image/dir/Path/URL/video/PIL/ndarray. 0 for webcam
     # results = model.predict(source="0")
     # results = model.predict(source="../datasets/test_image", show=True)  # Display preds. Accepts all YOLO predict arguments
 
     print("="*20)
 
-    im1 = Image.open("../datasets/test_image/640-640-zidane.jpg")
+    im1 = Image.open("test2.jpg")
 
     my_results = model(source=im1)
     print("my_results: ", my_results)
