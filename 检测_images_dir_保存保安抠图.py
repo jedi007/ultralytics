@@ -172,5 +172,8 @@ if __name__ == '__main__':
         one_img_crop(file_path, filename, time_prefix)
 
         count += 1
-        if count == 10:
-            break
+        # if count == 10:
+        #     break
+        if count % 100 == 0:
+            print(f"进度： {count}")
+        
