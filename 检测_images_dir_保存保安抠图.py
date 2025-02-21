@@ -48,7 +48,7 @@ def one_img_crop(img_path, prefix, time_prefix):
     # img = cv2.imread(img_path)
     height, width, channels = img.shape
 
-    results = model(source=img, save=False, show=False)
+    results = model(source=img, save=False, show=False, verbose = False)
 
     boxes = results[0].boxes
 
@@ -62,7 +62,7 @@ def one_img_crop(img_path, prefix, time_prefix):
         croped_img = img[y1:y2, x1:x2]
 
         # save other_clothes crop
-        clothes_result = model_cls_clothes(source=croped_img, save=False, show=False)
+        clothes_result = model_cls_clothes(source=croped_img, save=False, show=False, verbose = False)
         cls_id = clothes_result[0].probs.top1
 
         if cls_id == 0:
@@ -77,7 +77,7 @@ def one_img_crop(img_path, prefix, time_prefix):
         
         
         #  save ref crop
-        ref_result = model_cls_refjacket(source=croped_img, save=False, show=False)
+        ref_result = model_cls_refjacket(source=croped_img, save=False, show=False, verbose = False)
         cls_id = ref_result[0].probs.top1
         
         if cls_id == 0:
@@ -166,6 +166,7 @@ if __name__ == '__main__':
     # print("file_path_list: ", file_path_list)
 
     count = 0
+    total_size = len(file_name_list)
     for filename in file_name_list:
         file_path = f"{imgs_dir}/{filename}"
         
@@ -175,5 +176,4 @@ if __name__ == '__main__':
         # if count == 10:
         #     break
         if count % 100 == 0:
-            print(f"进度： {count}")
-        
+            print(f"进度： {count}/{total_size}")
