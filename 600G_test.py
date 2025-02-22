@@ -17,19 +17,20 @@ def yolo_pre():
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter('/home/hyzh/lijie/cache/2024-03-14/10-30-42_AI.mp4', fourcc, fps, (frame_width, frame_height))
 
-    # 加载支持中文的字体，需要根据实际情况修改字体文件路径
-    font_path = 'font.ttf'  # 例如使用黑体字体
-    font = ImageFont.truetype(font_path, 20)
+    # 加载支持中文的字体，调大字体大小，这里设置为 30
+    font_path = 'font.ttf'
+    font_size = 25
+    font = ImageFont.truetype(font_path, font_size)
 
     # 定义类别名称和颜色映射
     class_names = {0: '工作服', 1: '跌倒', 2: '安全帽', 3: '未戴安全帽', 4: '安全绳', 5: '未戴安全绳'}
     color_map = {
-        0: (255, 0, 0),  # 红色
-        1: (0, 255, 0),  # 绿色
-        2: (0, 0, 255),  # 蓝色
-        3: (255, 255, 0),  # 黄色
-        4: (255, 0, 255),  # 紫色
-        5: (0, 255, 255)  # 青色
+        0: (255, 0, 0),
+        1: (0, 255, 0),
+        2: (0, 0, 255),
+        3: (255, 255, 0),
+        4: (255, 0, 255),
+        5: (0, 255, 255)
     }
 
     while cap.isOpened():
@@ -53,7 +54,7 @@ def yolo_pre():
             color = color_map[class_id]
 
             # 绘制中文标签
-            draw.text((x1, y1 - 20), label, font=font, fill=color)
+            draw.text((x1, y1 - font_size - 5), label, font=font, fill=color)
 
             # 绘制目标框
             draw.rectangle((x1, y1, x2, y2), outline=color, width=2)
