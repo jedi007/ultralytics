@@ -45,6 +45,9 @@ def yolo_pre():
             # 绘制中文标签
             draw.text((x1, y1 - 20), label, font=font, fill=(255, 0, 0))
 
+            # 绘制目标框
+            draw.rectangle((x1, y1, x2, y2), outline=(255, 0, 0), width=2)
+
         # 将 PIL 图像转换回 OpenCV 的 BGR 图像
         anno_frame = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
