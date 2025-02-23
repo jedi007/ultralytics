@@ -144,6 +144,18 @@ if __name__ == '__main__':
 
     count = 0
     for video_path in files_list:
+        try:
+            # 获取文件大小
+            file_size = os.path.getsize(video_path)
+            file_size_MB = file_size/1024/1024
+            print(f"文件 {video_path} 的大小是 {file_size_MB} MB")
+
+            if file_size_MB > 10:
+                continue
+        except FileNotFoundError:
+            print(f"文件 {video_path} 未找到")
+        
+
         out_file_name = get_out_file_name(video_path)
         if out_file_name == "":
             continue

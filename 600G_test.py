@@ -2,6 +2,21 @@ import cv2
 from ultralytics import YOLO
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+import os
+
+video_path = '/home/hyzh/lijie/cache/2024-03-14/10-30-42.mp4'  # 2.8MB
+try:
+    # 获取文件大小
+    file_size = os.path.getsize(video_path)
+    file_size_MB = file_size/1024/1024
+    print(f"文件 {video_path} 的大小是 {file_size_MB} MB")
+
+    # if file_size_MB > 10:
+    #     continue
+except FileNotFoundError:
+    print(f"文件 {video_path} 未找到")
+
+exit()
 
 def yolo_pre():
     yolo = YOLO('det_personup_helmet_250107.pt')
