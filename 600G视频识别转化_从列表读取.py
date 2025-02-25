@@ -1,4 +1,5 @@
 # ssh root@203.25.213.139    pw:8K9mRMERPpubwM8z   /data/zlm/data/www/record
+# scp -r live root@203.25.213.139:/data/zlm/data/www/record
 
 import json
 from copy import deepcopy
@@ -11,7 +12,7 @@ print("current_path: ", current_path)
 
 videos_source_dir = "/data/cache/live0"
 
-out_dir = "/data/cache/live_add_AI_from_list"
+out_dir = "/data/cache/live_add_AI_from_list2"
 
 def file_path_exists(file_path):
     if os.path.exists(file_path):
@@ -144,46 +145,14 @@ if __name__ == '__main__':
     file_path_exists(out_dir)
 
 
-    files_list = ["8146c95d-1292-4163-8277-791617f90cdf#0/2025-02-13/10-13-55.mp4",
-"8146c95d-1292-4163-8277-791617f90cdf#0/2025-02-13/11-05-41.mp4",
-"8146c95d-1292-4163-8277-791617f90cdf#0/2025-02-13/15-02-02.mp4",
-"8146c95d-1292-4163-8277-791617f90cdf#0/2025-02-13/15-06-10.mp4",
-"a2664297-08a1-420a-8fb0-c7a8e7c16f17#3/2025-02-12/16-15-17.mp4",
-"062ce920-0542-4b3b-9c5f-9af2400950ec#0/2025-02-11/14-58-07.mp4",
-"4bf41a2f-de14-470c-95c9-0d9420a826fb#7/2025-02-11/14-38-24.mp4",
-"45a24436-702c-473e-bb46-70380291f698#4/2025-02-11/09-57-33.mp4",
-"45a24436-702c-473e-bb46-70380291f698#4/2025-02-11/10-17-41.mp4",
-"45a24436-702c-473e-bb46-70380291f698#4/2025-02-11/10-19-15.mp4",
-"45a24436-702c-473e-bb46-70380291f698#4/2025-02-11/10-27-02.mp4",
-"cc605ce5-c139-45ab-bb13-4f8414413598#4/2025-02-10/11-12-30.mp4",
-"cc605ce5-c139-45ab-bb13-4f8414413598#4/2025-02-10/12-21-42.mp4",
-"88d8d13a-76e2-4294-af76-392aab2ed875#7/2025-02-07/14-11-26.mp4",
-"88d8d13a-76e2-4294-af76-392aab2ed875#7/2025-02-11/10-44-26.mp4",
-"bfedb9a9-30b8-4b3b-a057-b60787aec23a#0/2025-01-22/10-29-47.mp4",
-"bfedb9a9-30b8-4b3b-a057-b60787aec23a#0/2025-01-22/10-52-36.mp4",
-"bfedb9a9-30b8-4b3b-a057-b60787aec23a#0/2025-01-22/10-56-33.mp4",
-"6c9cb688-39a0-472d-8f68-9ecf1736288b#7/2025-01-22/09-54-26.mp4",
-"6c9cb688-39a0-472d-8f68-9ecf1736288b#7/2025-01-22/09-58-28.mp4",
-"6c9cb688-39a0-472d-8f68-9ecf1736288b#7/2025-01-22/11-27-40.mp4",
-"c208f2b5-52a4-4361-8e18-7852cc918448#0/2025-01-22/09-48-11.mp4",
-"c208f2b5-52a4-4361-8e18-7852cc918448#0/2025-01-22/09-51-18.mp4",
-"30340014-54f1-43ad-a96a-23a7b8856011#7/2025-01-22/09-29-15.mp4",
-"30340014-54f1-43ad-a96a-23a7b8856011#7/2025-01-22/14-50-22.mp4",
-"5392750b-b03f-4128-99c7-920128b1c2d6#0/2025-01-20/11-01-19.mp4",
-"f2bc800e-b8c4-4797-8c43-53de50bb2ec2#0/2025-02-07/10-38-01.mp4",
-"c8fbedcb-516b-4777-82c5-a50755673bff#7/2025-02-07/10-28-50.mp4",
-"9826f220-2164-4434-aae0-b59e8de420b1#0/2025-02-06/10-00-47.mp4",
-"1644dd53-210a-471f-b504-0cf4b14e5987#7/2025-02-06/09-55-27.mp4",
-"e7489833-4f3c-460d-831d-6741932f219c#7/2025-01-03/14-15-05.mp4",
-"448b900f-a3ed-48c5-b13a-6f889589e10e#0/2025-01-03/14-44-41.mp4",
-"448b900f-a3ed-48c5-b13a-6f889589e10e#0/2025-01-03/15-44-42.mp4",
-"448b900f-a3ed-48c5-b13a-6f889589e10e#0/2025-01-03/16-44-43.mp4",
-"fe1b25e2-d187-45f8-89e7-2870880d07be#0/2025-01-02/10-47-53.mp4",
-"264f26e3-3e1a-4b72-8401-7d586984faf3#7/2025-01-02/10-39-29.mp4",
-"d8952213-ec4d-461f-9ec4-844004e3df3f#7/2024-12-31/14-06-13.mp4",
-"1bb84174-b0d8-470e-be1c-3d90df1f7554#0/2024-12-31/14-18-35.mp4",
-"d4e2fb4d-4d01-4a6c-8e1e-e4d961ffe9e0#1/2024-12-24/10-47-10.mp4",
-"44a98a88-ed5b-4550-aa5f-1311d3aa5a56#1/2024-12-24/10-03-09.mp4"]
+    files_list = []
+    with open('600G_filelist.txt', 'r', encoding='utf-8') as list_file:
+        print("open successed")
+        for line in list_file:
+            # line = rtsp_file.readline().replace("\\n","")
+            if len(line) > 1:
+                files_list.append(line.replace("\n",""))
+
     files_list_size = len(files_list)
     print("files_list size: ", files_list_size)
     print("files_list [0:3]: ", files_list[0:3])
@@ -200,6 +169,11 @@ if __name__ == '__main__':
         file_size = os.path.getsize(video_path)
         file_size_MB = file_size/1024/1024
         print(f"文件 {video_path} 的大小是 {file_size_MB} MB")
+
+        # continue
+
+        # if file_size_MB > 200:
+        #     continue
         
 
         out_file_name = get_out_file_name(video_path)

@@ -7,7 +7,7 @@ current_path = os.path.dirname(os.path.realpath(__file__))
 
 print("current_path: ", current_path)
 
-videos_source_file = "/data/cache/live"
+videos_source_file = "/data/cache/live_add_AI_bak_ttted/live"
 
 
 def file_path_exists(file_path):
@@ -40,7 +40,7 @@ if __name__ == '__main__':
         # 遍历列表
         for line in files_list:
             # 写入当前字符串并添加换行符
-            file.write(line.replace("/data/cache/live/", "").replace("_AI", "") + '\n')
+            file.write(line.replace(f"{videos_source_file}/", "").replace("_AI", "") + '\n')
 
     print("文件写入完成。")
 
