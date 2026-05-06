@@ -5,6 +5,7 @@ import argparse
 import os
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import cv2
 import numpy as np
@@ -34,6 +35,12 @@ LABEL_COLORS = {
 }
 DEFAULT_WINDOW_MAX_WIDTH = 1280
 DEFAULT_WINDOW_MAX_HEIGHT = 720
+DEFAULT_PTZ_PORT = 37777
+DEFAULT_PTZ_CHANNEL = 0
+DEFAULT_PTZ_SPEED = 4
+DEFAULT_CENTER_DEADZONE = 0.08
+DEFAULT_PTZ_COMMAND_INTERVAL = 0.25
+DEFAULT_TARGET_LOST_TIMEOUT = 0.8
 
 
 def is_display_available():
@@ -87,6 +94,15 @@ def resolve_font_path():
 
 def get_chinese_label(label):
 	return LABEL_TRANSLATIONS.get(label, label)
+
+
+def extract_rtsp_connection_info(rtsp_url):
+	parsed = urlsplit(rtsp_url)
+	return {
+		'host': parsed.hostname,
+		'username': parsed.username,
+		'password': parsed.password,
+	}
 
 
 def prepare_display_window(frame):
@@ -153,9 +169,143 @@ def filter_results_by_labels(result, model, filter_labels):
 	return result
 
 
-def draw_detections(frame, result, model, font, fps):
+def select_tracking_target(result, model, tracking_labels):
+	if result.boxes is None:
+		return None
+
+	best_target = None
+	best_score = None
+	for box, class_id, confidence in zip(result.boxes.xyxy.tolist(), result.boxes.cls.tolist(), result.boxes.conf.tolist()):
+		label = model.names[int(class_id)]
+		if tracking_labels and label not in tracking_labels:
+			continue
+		x1, y1, x2, y2 = [float(value) for value in box]
+		width = max(0.0, x2 - x1)
+		height = max(0.0, y2 - y1)
+		area = width * height
+		score = (area, float(confidence))
+		if best_score is None or score > best_score:
+			best_score = score
+			best_target = {
+				'label': label,
+				'confidence': float(confidence),
+				'box': (x1, y1, x2, y2),
+			}
+
+	return best_target
+
+
+class PtzAutoTracker:
+	def __init__(self, ptz_controller, speed, deadzone_x, deadzone_y, command_interval, target_lost_timeout):
+		self.ptz_controller = ptz_controller
+		self.speed = speed
+		self.deadzone_x = deadzone_x
+		self.deadzone_y = deadzone_y
+		self.command_interval = command_interval
+		self.target_lost_timeout = target_lost_timeout
+		self.active_command = None
+		self.last_command_time = 0.0
+		self.last_target_time = 0.0
+		self.last_status = 'PTZ: idle'
+
+	def update(self, frame_shape, target):
+		now = time.perf_counter()
+		if target is None:
+			if self.active_command and now - self.last_target_time >= self.target_lost_timeout:
+				self.stop()
+				self.last_status = 'PTZ: target lost, stop'
+			return self.last_status
+
+		self.last_target_time = now
+		frame_height, frame_width = frame_shape[:2]
+		x1, y1, x2, y2 = target['box']
+		target_center_x = (x1 + x2) / 2.0
+		target_center_y = (y1 + y2) / 2.0
+		offset_x = (target_center_x - frame_width / 2.0) / frame_width
+		offset_y = (target_center_y - frame_height / 2.0) / frame_height
+
+		horizontal = None
+		vertical = None
+		if offset_x <= -self.deadzone_x:
+			horizontal = 'left'
+		elif offset_x >= self.deadzone_x:
+			horizontal = 'right'
+
+		if offset_y <= -self.deadzone_y:
+			vertical = 'up'
+		elif offset_y >= self.deadzone_y:
+			vertical = 'down'
+
+		if horizontal and vertical:
+			next_command = f'{horizontal}{vertical}'
+		elif horizontal:
+			next_command = horizontal
+		elif vertical:
+			next_command = vertical
+		else:
+			next_command = None
+
+		if next_command is None:
+			self.stop()
+			self.last_status = (
+				f"PTZ: centered dx={offset_x:.3f} dy={offset_y:.3f}"
+			)
+			return self.last_status
+
+		if next_command == self.active_command:
+			self.last_status = f'PTZ: tracking {next_command} dx={offset_x:.3f} dy={offset_y:.3f}'
+			return self.last_status
+
+		if now - self.last_command_time < self.command_interval:
+			return self.last_status
+
+		self.stop()
+		self.ptz_controller.start_ptz(next_command, self.speed)
+		self.active_command = next_command
+		self.last_command_time = now
+		self.last_status = f'PTZ: tracking {next_command} dx={offset_x:.3f} dy={offset_y:.3f}'
+		return self.last_status
+
+	def stop(self):
+		if self.active_command:
+			self.ptz_controller.stop_ptz(self.active_command, self.speed)
+			self.active_command = None
+			self.last_command_time = time.perf_counter()
+
+
+def create_ptz_controller(rtsp_url, host, port, username, password, channel):
+	try:
+		from dahua_control_demo import DahuaPtzDemo
+	except ModuleNotFoundError as exc:
+		raise ModuleNotFoundError('NetSDK is required for --auto-center. Ensure dahua_control_demo.py dependencies are installed.') from exc
+
+	connection_info = extract_rtsp_connection_info(rtsp_url)
+	resolved_host = host or connection_info['host']
+	resolved_username = username or connection_info['username'] or 'admin'
+	resolved_password = password or connection_info['password'] or ''
+	if not resolved_host:
+		raise ValueError('PTZ host is required. Provide --ptz-host or embed the host in --rtsp-url.')
+
+	ptz_controller = DahuaPtzDemo(
+		host=resolved_host,
+		port=port,
+		username=resolved_username,
+		password=resolved_password,
+		channel=channel,
+	)
+	ptz_controller.login()
+	print(f'PTZ auto-center enabled: {resolved_host}:{port}, channel={channel}')
+	return ptz_controller
+
+
+def draw_detections(frame, result, model, font, fps, tracking_target=None, tracking_status=None):
 	pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 	draw = ImageDraw.Draw(pil_image)
+	frame_height, frame_width = frame.shape[:2]
+	center_x = frame_width // 2
+	center_y = frame_height // 2
+	draw.line((center_x - 20, center_y, center_x + 20, center_y), fill=(255, 255, 0), width=2)
+	draw.line((center_x, center_y - 20, center_x, center_y + 20), fill=(255, 255, 0), width=2)
 
 	detection_count = 0
 	if result.boxes is not None:
@@ -184,7 +334,16 @@ def draw_detections(frame, result, model, font, fps):
 			draw.rectangle((x1, text_top, x1 + text_width + 12, text_top + text_height + 8), fill=color)
 			draw.text((x1 + 6, text_top + 2), text, font=font, fill=(255, 255, 255))
 
+	if tracking_target is not None:
+		x1, y1, x2, y2 = [int(value) for value in tracking_target['box']]
+		target_center_x = (x1 + x2) // 2
+		target_center_y = (y1 + y2) // 2
+		draw.ellipse((target_center_x - 6, target_center_y - 6, target_center_x + 6, target_center_y + 6), fill=(255, 255, 0))
+		draw.line((center_x, center_y, target_center_x, target_center_y), fill=(255, 255, 0), width=2)
+
 	stats_text = f'FPS: {fps:.1f}   Detections: {detection_count}'
+	if tracking_status:
+		stats_text = f'{stats_text}   {tracking_status}'
 	stats_bbox = draw.textbbox((0, 0), stats_text, font=font)
 	stats_width = stats_bbox[2] - stats_bbox[0]
 	stats_height = stats_bbox[3] - stats_bbox[1]
@@ -203,7 +362,26 @@ def open_rtsp_capture(rtsp_url, transport):
 	return cap
 
 
-def run_rtsp_detection(rtsp_url, conf, imgsz, weights, filter_labels, transport):
+def run_rtsp_detection(
+	rtsp_url,
+	conf,
+	imgsz,
+	weights,
+	filter_labels,
+	transport,
+	auto_center,
+	center_target_labels,
+	ptz_host,
+	ptz_port,
+	ptz_username,
+	ptz_password,
+	ptz_channel,
+	ptz_speed,
+	center_deadzone_x,
+	center_deadzone_y,
+	ptz_command_interval,
+	target_lost_timeout,
+):
 	display_enabled = is_display_available()
 	if display_enabled:
 		cv2.startWindowThread()
@@ -213,14 +391,28 @@ def run_rtsp_detection(rtsp_url, conf, imgsz, weights, filter_labels, transport)
 	model, weights_path = load_model(weights)
 	font = ImageFont.truetype(str(resolve_font_path()), 24)
 	cap = open_rtsp_capture(rtsp_url, transport)
+	ptz_controller = None
+	auto_tracker = None
 
 	if not cap.isOpened():
 		raise RuntimeError('Failed to open RTSP stream. Check URL, credentials, camera connectivity, and transport mode.')
+	if auto_center:
+		ptz_controller = create_ptz_controller(rtsp_url, ptz_host, ptz_port, ptz_username, ptz_password, ptz_channel)
+		auto_tracker = PtzAutoTracker(
+			ptz_controller=ptz_controller,
+			speed=ptz_speed,
+			deadzone_x=center_deadzone_x,
+			deadzone_y=center_deadzone_y,
+			command_interval=ptz_command_interval,
+			target_lost_timeout=target_lost_timeout,
+		)
 
 	print(f'RTSP URL: {rtsp_url}')
 	print(f'Weights: {weights_path}')
 	print_available_labels(model)
 	print(f'Filter labels: {filter_labels or "ALL"}')
+	if auto_center:
+		print(f'Center target labels: {center_target_labels or filter_labels or "ALL"}')
 	if display_enabled:
 		print('Press q or Esc to exit')
 	else:
@@ -244,6 +436,9 @@ def run_rtsp_detection(rtsp_url, conf, imgsz, weights, filter_labels, transport)
 
 			results = model.predict(frame, conf=conf, imgsz=imgsz, verbose=False)
 			filtered_result = filter_results_by_labels(results[0], model, filter_labels)
+			tracking_labels = center_target_labels or filter_labels
+			tracking_target = select_tracking_target(filtered_result, model, tracking_labels)
+			tracking_status = auto_tracker.update(frame.shape, tracking_target) if auto_tracker else None
 
 			frame_counter += 1
 			current_time = time.perf_counter()
@@ -253,13 +448,26 @@ def run_rtsp_detection(rtsp_url, conf, imgsz, weights, filter_labels, transport)
 				fps_window_start = current_time
 				frame_counter = 0
 
-			annotated_frame = draw_detections(frame, filtered_result, model, font, fps)
+			annotated_frame = draw_detections(
+				frame,
+				filtered_result,
+				model,
+				font,
+				fps,
+				tracking_target=tracking_target,
+				tracking_status=tracking_status,
+			)
 			if display_enabled:
 				cv2.imshow(WINDOW_NAME, annotated_frame)
 				key = cv2.waitKey(1) & 0xFF
 				if key == ord('q') or key == 27:
 					break
 	finally:
+		if auto_tracker is not None:
+			auto_tracker.stop()
+		if ptz_controller is not None:
+			ptz_controller.stop_active_ptz()
+			ptz_controller.cleanup()
 		cap.release()
 		cv2.destroyAllWindows()
 
@@ -272,12 +480,44 @@ def parse_args():
 	parser.add_argument('--conf', type=float, default=0.25, help='Detection confidence threshold')
 	parser.add_argument('--imgsz', type=int, default=640, help='Inference image size')
 	parser.add_argument('--rtsp-transport', choices=['tcp', 'udp'], default='tcp', help='RTSP transport mode for FFmpeg backend')
+	parser.add_argument('--auto-center', default=True, action='store_true', help='Enable Dahua PTZ auto-centering for the selected target')
+	parser.add_argument('--center-target-labels', nargs='*', default=[], help='Labels eligible for PTZ auto-centering; omit to reuse --labels or all detections')
+	parser.add_argument('--ptz-host', default=None, help='Dahua PTZ device IP, defaults to the host parsed from --rtsp-url')
+	parser.add_argument('--ptz-port', type=int, default=DEFAULT_PTZ_PORT, help='Dahua NetSDK port')
+	parser.add_argument('--ptz-username', default=None, help='Dahua NetSDK username, defaults to the username parsed from --rtsp-url')
+	parser.add_argument('--ptz-password', default=None, help='Dahua NetSDK password, defaults to the password parsed from --rtsp-url')
+	parser.add_argument('--ptz-channel', type=int, default=DEFAULT_PTZ_CHANNEL, help='Dahua PTZ channel number')
+	parser.add_argument('--ptz-speed', type=int, default=DEFAULT_PTZ_SPEED, help='PTZ speed, range 1-8')
+	parser.add_argument('--center-deadzone-x', type=float, default=DEFAULT_CENTER_DEADZONE, help='Horizontal deadzone ratio around image center')
+	parser.add_argument('--center-deadzone-y', type=float, default=DEFAULT_CENTER_DEADZONE, help='Vertical deadzone ratio around image center')
+	parser.add_argument('--ptz-command-interval', type=float, default=DEFAULT_PTZ_COMMAND_INTERVAL, help='Minimum seconds between PTZ direction changes')
+	parser.add_argument('--target-lost-timeout', type=float, default=DEFAULT_TARGET_LOST_TIMEOUT, help='Seconds to wait before stopping PTZ after target loss')
 	return parser.parse_args()
 
 
 def main():
 	args = parse_args()
-	run_rtsp_detection(args.rtsp_url, args.conf, args.imgsz, args.weights, args.labels, args.rtsp_transport)
+	print("args.auto_center: ", args.auto_center)
+	run_rtsp_detection(
+		args.rtsp_url,
+		args.conf,
+		args.imgsz,
+		args.weights,
+		args.labels,
+		args.rtsp_transport,
+		args.auto_center,
+		args.center_target_labels,
+		args.ptz_host,
+		args.ptz_port,
+		args.ptz_username,
+		args.ptz_password,
+		args.ptz_channel,
+		args.ptz_speed,
+		args.center_deadzone_x,
+		args.center_deadzone_y,
+		args.ptz_command_interval,
+		args.target_lost_timeout,
+	)
 
 
 if __name__ == '__main__':
