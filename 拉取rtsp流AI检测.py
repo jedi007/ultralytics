@@ -38,7 +38,7 @@ DEFAULT_WINDOW_MAX_WIDTH = 1280
 DEFAULT_WINDOW_MAX_HEIGHT = 720
 DEFAULT_PTZ_PORT = 37777
 DEFAULT_PTZ_CHANNEL = 0
-DEFAULT_PTZ_SPEED = 4
+DEFAULT_PTZ_SPEED = 2
 DEFAULT_CENTER_DEADZONE = 0.08
 DEFAULT_PTZ_COMMAND_INTERVAL = 0.25
 DEFAULT_TARGET_LOST_TIMEOUT = 0.8
@@ -206,18 +206,23 @@ class PtzAutoTracker:
 		self.target_lost_timeout = target_lost_timeout
 		self.active_command = None
 		self.last_command_time = 0.0
-		self.last_target_time = 0.0
 		self.last_status = 'PTZ: idle'
 
 	def update(self, frame_shape, target):
 		now = time.perf_counter()
 		if target is None:
-			if self.active_command and now - self.last_target_time >= self.target_lost_timeout:
+			if self.active_command:
 				self.stop()
 				self.last_status = 'PTZ: target lost, stop'
 			return self.last_status
 
-		self.last_target_time = now
+		# print("now: ", now)
+		# print("self.last_command_time: ", self.last_command_time)
+		# print("self.command_interval: ", self.command_interval)
+
+		if now - self.last_command_time < self.command_interval:
+			return self.last_status
+  
 		frame_height, frame_width = frame_shape[:2]
 		x1, y1, x2, y2 = target['box']
 		target_center_x = (x1 + x2) / 2.0
@@ -253,15 +258,23 @@ class PtzAutoTracker:
 			)
 			return self.last_status
 
-		if next_command == self.active_command:
-			self.last_status = f'PTZ: tracking {next_command} dx={offset_x:.3f} dy={offset_y:.3f}'
+		if self.active_command:
+			self.last_status = (
+				f'PTZ: busy {self.active_command}, skip {next_command} '
+				f'dx={offset_x:.3f} dy={offset_y:.3f}'
+			)
 			return self.last_status
 
 		if now - self.last_command_time < self.command_interval:
 			return self.last_status
 
 		self.stop()
-		self.ptz_controller.start_ptz(next_command, self.speed)
+		print("next_command: ", next_command)
+		print("self.speed: ", self.speed)
+  
+		self.last_command_time = now
+		# self.ptz_controller.start_ptz(next_command, self.speed)
+		self.ptz_controller.ptz_control(next_command, 8, 0.5)
 		self.active_command = next_command
 		self.last_command_time = now
 		self.last_status = f'PTZ: tracking {next_command} dx={offset_x:.3f} dy={offset_y:.3f}'
@@ -497,6 +510,10 @@ def run_rtsp_detection(
 			filtered_result = filter_results_by_labels(results[0], model, filter_labels)
 			tracking_labels = center_target_labels or filter_labels
 			tracking_target = select_tracking_target(filtered_result, model, tracking_labels)
+			# print("tracking_target: ", tracking_target)
+			# print("frame.shape: ", frame.shape)
+			#   tracking_target:  {'label': 'instrument', 'confidence': 0.3569718897342682, 'box': (824.5673828125, 425.1272277832031, 942.43310546875, 541.5030517578125)}
+			#   frame.shape:  (1080, 1920, 3)
 			tracking_status = auto_tracker.update(frame.shape, tracking_target) if auto_tracker else None
 
 			frame_counter += 1
@@ -557,6 +574,7 @@ def parse_args():
 def main():
 	args = parse_args()
 	print("args.auto_center: ", args.auto_center)
+	print("args.ptz_speed", args.ptz_speed)
 	run_rtsp_detection(
 		args.rtsp_url,
 		args.conf,
