@@ -197,6 +197,27 @@ def select_tracking_target(result, model, tracking_labels):
 	return best_target
 
 
+def get_pulse_duration_from_offset(offset):
+	abs_offset = abs(offset)
+	if abs_offset < 30:
+		return 0.1
+	if abs_offset < 100:
+		return 0.2
+	if abs_offset < 200:
+		return 0.3
+	if abs_offset < 300:
+		return 0.4
+	if abs_offset < 400:
+		return 0.5
+	if abs_offset < 500:
+		return 0.6
+	if abs_offset < 600:
+		return 0.75
+	if abs_offset < 700:
+		return 0.9
+	return 1.0
+
+
 class PtzAutoTracker:
 	def __init__(self, ptz_controller, deadzone_x, deadzone_y, target_lost_timeout):
 		self.ptz_controller = ptz_controller
@@ -243,10 +264,10 @@ class PtzAutoTracker:
 			vertical = 'down'
    
 		if now - self.last_command_time < self.command_duration:
-			if (offset_x < -self.deadzone_x and self.active_command in ['left', 'leftup', 'leftdown']) \
-				or (offset_x > self.deadzone_x and self.active_command in ['right', 'rightup', 'rightdown']) \
-				or (offset_y < -self.deadzone_y and self.active_command in ['up', 'leftup', 'rightup']) \
-				or (offset_y > self.deadzone_y and self.active_command in ['down', 'leftdown', 'rightdown']):
+			if (offset_x > self.deadzone_x and self.active_command in ['left', 'leftup', 'leftdown']) \
+				or (offset_x < -self.deadzone_x and self.active_command in ['right', 'rightup', 'rightdown']) \
+				or (offset_y > self.deadzone_y and self.active_command in ['up', 'leftup', 'rightup']) \
+				or (offset_y < -self.deadzone_y and self.active_command in ['down', 'leftdown', 'rightdown']):
 				self.stop()
 				self.last_status = f'PTZ: stop active command if target is within deadzone. dx={offset_x:.3f} dy={offset_y:.3f}'	
 			return self.last_status
@@ -269,9 +290,9 @@ class PtzAutoTracker:
 			)
 			return self.last_status
 
-		x_duration = abs(offset_x) / 600.0 if abs(offset_x) > self.deadzone_x else 1.0
-		y_duration = abs(offset_y) / 600.0 if abs(offset_y) > self.deadzone_y else 1.0
-		pulse_duration = min(max(min(x_duration, y_duration), 0.1), 1.0)
+		x_duration = get_pulse_duration_from_offset(offset_x)
+		y_duration = get_pulse_duration_from_offset(offset_y)
+		pulse_duration = min(x_duration, y_duration)
 		self.command_duration = pulse_duration
 		self._start_command_pulse(next_command, speed, pulse_duration)
 		self.last_status = f'PTZ: pulse {next_command} speed={speed} duration={pulse_duration:.2f}s dx={offset_x:.3f} dy={offset_y:.3f}'
