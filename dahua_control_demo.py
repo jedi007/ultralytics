@@ -100,6 +100,8 @@ class DahuaPtzDemo:
 	def stop_ptz(self, command_name: str, speed: int | None = None) -> None:
 		if command_name not in COMMAND_MAP:
 			raise ValueError(f"不支持的命令: {command_name}")
+		if command_name not in self._active_commands:
+			return
 		resolved_speed = speed if speed is not None else self._active_commands.get(command_name, 4)
 		if not 1 <= resolved_speed <= 8:
 			raise ValueError("speed 必须在 1 到 8 之间")

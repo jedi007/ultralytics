@@ -334,16 +334,8 @@ class PtzAutoTracker:
 			self.last_status = 'PTZ: idle'
 
 	def stop(self, wait=False):
-		with self.state_lock:
-			command_thread = self.command_thread
-			active_pulse_duration = self.active_pulse_duration
-
-		if wait and command_thread is not None:
-			join_timeout = (active_pulse_duration or DEFAULT_PTZ_PULSE_DURATION) + 1.0
-			command_thread.join(timeout=join_timeout)
-
 		self.active_command = None
-		self.active_pulse_duration = None
+		self.active_pulse_duration = 0.0
 		self.ptz_controller.stop_active_ptz()
 
 
