@@ -208,6 +208,7 @@ class PtzAutoTracker:
 		self.command_duration = 0.0
 		self.command_thread = None
 		self.command_error = None
+		self.active_command = None
 		self.active_pulse_duration = None
 		self.state_lock = threading.Lock()
 
@@ -218,10 +219,6 @@ class PtzAutoTracker:
 			self.last_status = 'PTZ: target lost'
 			self.stop()
 			return self.last_status
-
-		if now - self.last_command_time < self.command_duration:
-			return self.last_status
-		self.last_command_time = now
 
 		frame_height, frame_width = frame_shape[:2]
 		x1, y1, x2, y2 = target['box']
@@ -244,6 +241,14 @@ class PtzAutoTracker:
 			vertical = 'up'
 		elif offset_y >= self.deadzone_y:
 			vertical = 'down'
+   
+		if now - self.last_command_time < self.command_duration:
+			if (abs(offset_x) < self.deadzone_x and self.active_command in ['left', 'right', 'leftup', 'leftdown', 'rightup', 'rightdown']) \
+				or (abs(offset_y) < self.deadzone_y and self.active_command in ['up', 'down', 'leftup', 'leftdown', 'rightup', 'rightdown']):
+				self.stop()
+				self.last_status = f'PTZ: waiting for command completion, stop active command if target is within deadzone. dx={offset_x:.3f} dy={offset_y:.3f}'	
+			return self.last_status
+		self.last_command_time = now
 
 		if horizontal and vertical:
 			next_command = f'{horizontal}{vertical}'
@@ -256,13 +261,14 @@ class PtzAutoTracker:
 
 		if next_command is None:
 			self.stop()
+			self.active_command = None
 			self.last_status = (
 				f"PTZ: centered dx={offset_x:.3f} dy={offset_y:.3f}, next_command is None"
 			)
 			return self.last_status
 
-		x_duration = abs(offset_x) / 300.0 if abs(offset_x) > self.deadzone_x else 5.0
-		y_duration = abs(offset_y) / 300.0 if abs(offset_y) > self.deadzone_y else 5.0
+		x_duration = abs(offset_x) / 600.0 if abs(offset_x) > self.deadzone_x else 2.0
+		y_duration = abs(offset_y) / 600.0 if abs(offset_y) > self.deadzone_y else 2.0
 		pulse_duration = max(min(x_duration, y_duration), 0.1)
 		self.command_duration = pulse_duration
 		self._start_command_pulse(next_command, speed, pulse_duration)
@@ -273,6 +279,7 @@ class PtzAutoTracker:
 		with self.state_lock:
 			self.active_pulse_duration = pulse_duration
 			self.command_error = None
+			self.active_command = command_name
 			self.command_thread = threading.Thread(
 				target=self._run_command_pulse,
 				args=(command_name, speed, pulse_duration),
@@ -311,6 +318,10 @@ class PtzAutoTracker:
 		if wait and command_thread is not None:
 			join_timeout = (active_pulse_duration or DEFAULT_PTZ_PULSE_DURATION) + 1.0
 			command_thread.join(timeout=join_timeout)
+
+		self.active_command = None
+		self.active_pulse_duration = None
+		self.ptz_controller.stop_active_ptz()
 
 
 def create_ptz_controller(rtsp_url, host, port, username, password, channel):
