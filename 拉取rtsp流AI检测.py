@@ -39,6 +39,7 @@ DEFAULT_WINDOW_MAX_HEIGHT = 720
 DEFAULT_PTZ_PORT = 37777
 DEFAULT_PTZ_CHANNEL = 0
 DEFAULT_PTZ_SPEED = 8
+DEFAULT_CONFIDENCE = 0.55
 DEFAULT_CENTER_DEADZONE = 100
 DEFAULT_TARGET_LOST_TIMEOUT = 0.8
 DEFAULT_PTZ_PULSE_DURATION = 0.5
@@ -583,7 +584,7 @@ def parse_args():
 	parser.add_argument('--rtsp-url', default=DEFAULT_RTSP_URL, help='RTSP stream URL')
 	parser.add_argument('--weights', default=DEFAULT_WEIGHT_FILE_NAME, help='YOLO .pt file path or file name')
 	parser.add_argument('--labels', nargs='*', default=[], help='Labels to keep; omit to keep all classes')
-	parser.add_argument('--conf', type=float, default=0.25, help='Detection confidence threshold')
+	parser.add_argument('--conf', type=float, default=DEFAULT_CONFIDENCE, help='Detection confidence threshold')
 	parser.add_argument('--imgsz', type=int, default=640, help='Inference image size')
 	parser.add_argument('--rtsp-transport', choices=['tcp', 'udp'], default='tcp', help='RTSP transport mode for FFmpeg backend')
 	parser.add_argument('--auto-center', default=True, action='store_true', help='Enable Dahua PTZ auto-centering for the selected target')
