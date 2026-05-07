@@ -38,10 +38,10 @@ DEFAULT_WINDOW_MAX_WIDTH = 1280
 DEFAULT_WINDOW_MAX_HEIGHT = 720
 DEFAULT_PTZ_PORT = 37777
 DEFAULT_PTZ_CHANNEL = 0
-DEFAULT_PTZ_SPEED = 2
-DEFAULT_CENTER_DEADZONE = 0.08
-DEFAULT_PTZ_COMMAND_INTERVAL = 0.25
+DEFAULT_PTZ_SPEED = 8
+DEFAULT_CENTER_DEADZONE = 100
 DEFAULT_TARGET_LOST_TIMEOUT = 0.8
+DEFAULT_PTZ_PULSE_DURATION = 0.5
 
 
 def is_display_available():
@@ -197,38 +197,40 @@ def select_tracking_target(result, model, tracking_labels):
 
 
 class PtzAutoTracker:
-	def __init__(self, ptz_controller, speed, deadzone_x, deadzone_y, command_interval, target_lost_timeout):
+	def __init__(self, ptz_controller, deadzone_x, deadzone_y, target_lost_timeout):
 		self.ptz_controller = ptz_controller
-		self.speed = speed
 		self.deadzone_x = deadzone_x
 		self.deadzone_y = deadzone_y
-		self.command_interval = command_interval
 		self.target_lost_timeout = target_lost_timeout
-		self.active_command = None
 		self.last_command_time = 0.0
 		self.last_status = 'PTZ: idle'
+		self.command_duration = 0.0
+		self.command_thread = None
+		self.command_error = None
+		self.active_pulse_duration = None
+		self.state_lock = threading.Lock()
 
-	def update(self, frame_shape, target):
+	def update(self, frame_shape, target, speed, pulse_duration):
 		now = time.perf_counter()
+		self._update_command_completion_status()
 		if target is None:
-			if self.active_command:
-				self.stop()
-				self.last_status = 'PTZ: target lost, stop'
+			self.last_status = 'PTZ: target lost'
+			self.stop()
 			return self.last_status
 
-		# print("now: ", now)
-		# print("self.last_command_time: ", self.last_command_time)
-		# print("self.command_interval: ", self.command_interval)
-
-		if now - self.last_command_time < self.command_interval:
+		if now - self.last_command_time < self.command_duration:
 			return self.last_status
-  
+		self.last_command_time = now
+
 		frame_height, frame_width = frame_shape[:2]
 		x1, y1, x2, y2 = target['box']
 		target_center_x = (x1 + x2) / 2.0
 		target_center_y = (y1 + y2) / 2.0
-		offset_x = (target_center_x - frame_width / 2.0) / frame_width
-		offset_y = (target_center_y - frame_height / 2.0) / frame_height
+		offset_x = target_center_x - frame_width / 2.0
+		offset_y = target_center_y - frame_height / 2.0
+  
+		# print("self.deadzone_x: ", self.deadzone_x)
+		# print("self.deadzone_y: ", self.deadzone_y)
 
 		horizontal = None
 		vertical = None
@@ -254,37 +256,60 @@ class PtzAutoTracker:
 		if next_command is None:
 			self.stop()
 			self.last_status = (
-				f"PTZ: centered dx={offset_x:.3f} dy={offset_y:.3f}"
+				f"PTZ: centered dx={offset_x:.3f} dy={offset_y:.3f}, next_command is None"
 			)
 			return self.last_status
 
-		if self.active_command:
-			self.last_status = (
-				f'PTZ: busy {self.active_command}, skip {next_command} '
-				f'dx={offset_x:.3f} dy={offset_y:.3f}'
-			)
-			return self.last_status
-
-		if now - self.last_command_time < self.command_interval:
-			return self.last_status
-
-		self.stop()
-		print("next_command: ", next_command)
-		print("self.speed: ", self.speed)
-  
-		self.last_command_time = now
-		# self.ptz_controller.start_ptz(next_command, self.speed)
-		self.ptz_controller.ptz_control(next_command, 8, 0.5)
-		self.active_command = next_command
-		self.last_command_time = now
-		self.last_status = f'PTZ: tracking {next_command} dx={offset_x:.3f} dy={offset_y:.3f}'
+		x_duration = abs(offset_x) / 300.0 if abs(offset_x) > self.deadzone_x else 5.0
+		y_duration = abs(offset_y) / 300.0 if abs(offset_y) > self.deadzone_y else 5.0
+		pulse_duration = max(min(x_duration, y_duration), 0.1)
+		self.command_duration = pulse_duration
+		self._start_command_pulse(next_command, speed, pulse_duration)
+		self.last_status = f'PTZ: pulse {next_command} speed={speed} duration={pulse_duration:.2f}s dx={offset_x:.3f} dy={offset_y:.3f}'
 		return self.last_status
 
-	def stop(self):
-		if self.active_command:
-			self.ptz_controller.stop_ptz(self.active_command, self.speed)
-			self.active_command = None
-			self.last_command_time = time.perf_counter()
+	def _start_command_pulse(self, command_name, speed, pulse_duration):
+		with self.state_lock:
+			self.active_pulse_duration = pulse_duration
+			self.command_error = None
+			self.command_thread = threading.Thread(
+				target=self._run_command_pulse,
+				args=(command_name, speed, pulse_duration),
+				name='ptz-command-pulse',
+				daemon=True,
+			)
+			self.command_thread.start()
+
+	def _run_command_pulse(self, command_name, speed, pulse_duration):
+		try:
+			self.ptz_controller.ptz_control(command_name, speed, pulse_duration)
+		except Exception as exc:
+			with self.state_lock:
+				self.command_error = exc
+		finally:
+			with self.state_lock:
+				self.active_pulse_duration = None
+				self.command_thread = None
+				self.last_command_time = time.perf_counter()
+
+	def _update_command_completion_status(self):
+		with self.state_lock:
+			command_error = self.command_error
+			self.command_error = None
+
+		if command_error is not None:
+			self.last_status = f'PTZ: command error {command_error}'
+		elif self.last_status.startswith('PTZ: pulse '):
+			self.last_status = 'PTZ: idle'
+
+	def stop(self, wait=False):
+		with self.state_lock:
+			command_thread = self.command_thread
+			active_pulse_duration = self.active_pulse_duration
+
+		if wait and command_thread is not None:
+			join_timeout = (active_pulse_duration or DEFAULT_PTZ_PULSE_DURATION) + 1.0
+			command_thread.join(timeout=join_timeout)
 
 
 def create_ptz_controller(rtsp_url, host, port, username, password, channel):
@@ -448,9 +473,9 @@ def run_rtsp_detection(
 	ptz_password,
 	ptz_channel,
 	ptz_speed,
+	ptz_pulse_duration,
 	center_deadzone_x,
 	center_deadzone_y,
-	ptz_command_interval,
 	target_lost_timeout,
 ):
 	display_enabled = is_display_available()
@@ -471,10 +496,8 @@ def run_rtsp_detection(
 		ptz_controller = create_ptz_controller(rtsp_url, ptz_host, ptz_port, ptz_username, ptz_password, ptz_channel)
 		auto_tracker = PtzAutoTracker(
 			ptz_controller=ptz_controller,
-			speed=ptz_speed,
 			deadzone_x=center_deadzone_x,
 			deadzone_y=center_deadzone_y,
-			command_interval=ptz_command_interval,
 			target_lost_timeout=target_lost_timeout,
 		)
 
@@ -494,6 +517,7 @@ def run_rtsp_detection(
 	fps_window_start = time.perf_counter()
 	window_prepared = False
 	last_frame_id = None
+	last_status = None
 
 	try:
 		while True:
@@ -514,7 +538,13 @@ def run_rtsp_detection(
 			# print("frame.shape: ", frame.shape)
 			#   tracking_target:  {'label': 'instrument', 'confidence': 0.3569718897342682, 'box': (824.5673828125, 425.1272277832031, 942.43310546875, 541.5030517578125)}
 			#   frame.shape:  (1080, 1920, 3)
-			tracking_status = auto_tracker.update(frame.shape, tracking_target) if auto_tracker else None
+			tracking_status = (
+				auto_tracker.update(frame.shape, tracking_target, ptz_speed, ptz_pulse_duration)
+				if auto_tracker else None
+			)
+			if tracking_status != last_status:
+				print("tracking_status: ", tracking_status)
+				last_status = tracking_status
 
 			frame_counter += 1
 			current_time = time.perf_counter()
@@ -540,7 +570,7 @@ def run_rtsp_detection(
 					break
 	finally:
 		if auto_tracker is not None:
-			auto_tracker.stop()
+			auto_tracker.stop(wait=True)
 		if ptz_controller is not None:
 			ptz_controller.stop_active_ptz()
 			ptz_controller.cleanup()
@@ -564,9 +594,9 @@ def parse_args():
 	parser.add_argument('--ptz-password', default=None, help='Dahua NetSDK password, defaults to the password parsed from --rtsp-url')
 	parser.add_argument('--ptz-channel', type=int, default=DEFAULT_PTZ_CHANNEL, help='Dahua PTZ channel number')
 	parser.add_argument('--ptz-speed', type=int, default=DEFAULT_PTZ_SPEED, help='PTZ speed, range 1-8')
+	parser.add_argument('--ptz-pulse-duration', type=float, default=DEFAULT_PTZ_PULSE_DURATION, help='Pulse duration in seconds for each PTZ command')
 	parser.add_argument('--center-deadzone-x', type=float, default=DEFAULT_CENTER_DEADZONE, help='Horizontal deadzone ratio around image center')
 	parser.add_argument('--center-deadzone-y', type=float, default=DEFAULT_CENTER_DEADZONE, help='Vertical deadzone ratio around image center')
-	parser.add_argument('--ptz-command-interval', type=float, default=DEFAULT_PTZ_COMMAND_INTERVAL, help='Minimum seconds between PTZ direction changes')
 	parser.add_argument('--target-lost-timeout', type=float, default=DEFAULT_TARGET_LOST_TIMEOUT, help='Seconds to wait before stopping PTZ after target loss')
 	return parser.parse_args()
 
@@ -575,6 +605,8 @@ def main():
 	args = parse_args()
 	print("args.auto_center: ", args.auto_center)
 	print("args.ptz_speed", args.ptz_speed)
+	print("args.center_deadzone_x", args.center_deadzone_x)
+	print("args.center_deadzone_y", args.center_deadzone_y)
 	run_rtsp_detection(
 		args.rtsp_url,
 		args.conf,
@@ -590,9 +622,9 @@ def main():
 		args.ptz_password,
 		args.ptz_channel,
 		args.ptz_speed,
+		args.ptz_pulse_duration,
 		args.center_deadzone_x,
 		args.center_deadzone_y,
-		args.ptz_command_interval,
 		args.target_lost_timeout,
 	)
 
