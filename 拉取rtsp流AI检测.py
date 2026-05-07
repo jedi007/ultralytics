@@ -243,10 +243,12 @@ class PtzAutoTracker:
 			vertical = 'down'
    
 		if now - self.last_command_time < self.command_duration:
-			if (abs(offset_x) < self.deadzone_x and self.active_command in ['left', 'right', 'leftup', 'leftdown', 'rightup', 'rightdown']) \
-				or (abs(offset_y) < self.deadzone_y and self.active_command in ['up', 'down', 'leftup', 'leftdown', 'rightup', 'rightdown']):
+			if (offset_x < -self.deadzone_x and self.active_command in ['left', 'leftup', 'leftdown']) \
+				or (offset_x > self.deadzone_x and self.active_command in ['right', 'rightup', 'rightdown']) \
+				or (offset_y < -self.deadzone_y and self.active_command in ['up', 'leftup', 'rightup']) \
+				or (offset_y > self.deadzone_y and self.active_command in ['down', 'leftdown', 'rightdown']):
 				self.stop()
-				self.last_status = f'PTZ: waiting for command completion, stop active command if target is within deadzone. dx={offset_x:.3f} dy={offset_y:.3f}'	
+				self.last_status = f'PTZ: stop active command if target is within deadzone. dx={offset_x:.3f} dy={offset_y:.3f}'	
 			return self.last_status
 		self.last_command_time = now
 
@@ -267,9 +269,9 @@ class PtzAutoTracker:
 			)
 			return self.last_status
 
-		x_duration = abs(offset_x) / 600.0 if abs(offset_x) > self.deadzone_x else 2.0
-		y_duration = abs(offset_y) / 600.0 if abs(offset_y) > self.deadzone_y else 2.0
-		pulse_duration = max(min(x_duration, y_duration), 0.1)
+		x_duration = abs(offset_x) / 600.0 if abs(offset_x) > self.deadzone_x else 1.0
+		y_duration = abs(offset_y) / 600.0 if abs(offset_y) > self.deadzone_y else 1.0
+		pulse_duration = min(max(min(x_duration, y_duration), 0.1), 1.0)
 		self.command_duration = pulse_duration
 		self._start_command_pulse(next_command, speed, pulse_duration)
 		self.last_status = f'PTZ: pulse {next_command} speed={speed} duration={pulse_duration:.2f}s dx={offset_x:.3f} dy={offset_y:.3f}'
