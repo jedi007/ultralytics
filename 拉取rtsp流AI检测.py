@@ -201,21 +201,21 @@ def get_pulse_duration_from_offset(offset):
 	abs_offset = abs(offset)
 	if abs_offset < 30:
 		return 0.1
-	if abs_offset < 100:
+	if abs_offset < 60:
+		return 0.15
+	if abs_offset < 120:
 		return 0.2
-	if abs_offset < 200:
+	if abs_offset < 240:
 		return 0.3
-	if abs_offset < 300:
+	if abs_offset < 330:
 		return 0.4
-	if abs_offset < 400:
+	if abs_offset < 420:
 		return 0.5
-	if abs_offset < 500:
+	if abs_offset < 510:
 		return 0.6
 	if abs_offset < 600:
-		return 0.75
-	if abs_offset < 700:
-		return 0.9
-	return 1.0
+		return 0.7
+	return 0.8
 
 
 class PtzAutoTracker:
@@ -290,8 +290,8 @@ class PtzAutoTracker:
 			)
 			return self.last_status
 
-		x_duration = get_pulse_duration_from_offset(offset_x)
-		y_duration = get_pulse_duration_from_offset(offset_y)
+		x_duration = get_pulse_duration_from_offset(offset_x) if abs(offset_x) >= self.deadzone_x else 1.0
+		y_duration = get_pulse_duration_from_offset(offset_y) if abs(offset_y) >= self.deadzone_y else 1.0
 		pulse_duration = min(x_duration, y_duration)
 		self.command_duration = pulse_duration
 		self._start_command_pulse(next_command, speed, pulse_duration)

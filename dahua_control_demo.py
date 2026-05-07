@@ -133,7 +133,7 @@ class DahuaPtzDemo:
 			self.login_id,
 			self.channel,
 			command,
-			0,
+			speed,
 			speed,
 			0,
 			stop,
