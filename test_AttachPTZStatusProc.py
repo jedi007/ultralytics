@@ -62,6 +62,7 @@ class DahuaAttachPTZStatusDemo:
 		self.attach_handle = C_LLONG()
 		self.sdk = NetClient()
 		self._last_status = None
+		self._last_valid_status = None
 		self._disconnect_cb = fDisConnect(self._on_disconnect)
 		self._reconnect_cb = fHaveReConnect(self._on_reconnect)
 		self._ptz_status_cb = fPTZStatusProcCallBack(self._on_ptz_status)
@@ -94,11 +95,35 @@ class DahuaAttachPTZStatusDemo:
 			"abs_zoom": abs_position.nZoom,
 		}
 
+		if self._should_ignore_zero_idle_status(status):
+			return
+
 		if status == self._last_status:
 			return
 
 		self._last_status = status
+		if not self._is_zero_status(status):
+			self._last_valid_status = status
 		self._print_monitor_status(status, ptz_info.dwUTC)
+
+	def _is_zero_status(self, status: dict) -> bool:
+		return (
+			status["pan"] == 0
+			and status["tilt"] == 0
+			and status["zoom_step"] == 0
+			and status["abs_pan"] == 0
+			and status["abs_tilt"] == 0
+			and status["abs_zoom"] == 0
+		)
+
+	def _should_ignore_zero_idle_status(self, status: dict) -> bool:
+		if status["state"] != 2:
+			return False
+		if not self._is_zero_status(status):
+			return False
+		if self._last_valid_status is None:
+			return False
+		return not self._is_zero_status(self._last_valid_status)
 
 	def _print_monitor_status(self, status: dict, dw_utc: int) -> None:
 		utc_text = datetime.fromtimestamp(dw_utc).strftime("%Y-%m-%d %H:%M:%S") if dw_utc else "local"
