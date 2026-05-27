@@ -1,0 +1,184 @@
+from pathlib import Path
+import argparse
+import math
+
+import cv2
+
+from ultralytics import YOLO
+
+
+DEFAULT_MODEL_PATH = "pose_instrument_20260527.pt"
+DEFAULT_IMAGE_PATH = "test_images/camera_capture_2026-04-24-03-43-31_9305_obj002.jpg"
+DEFAULT_OUTPUT_DIR = "runs/pose_demo"
+DEFAULT_CONF = 0.01
+
+
+def _normalize_angle(angle_deg: float) -> float:
+	return angle_deg % 360.0
+
+
+def _point_angle_deg(center: tuple[float, float], point: tuple[float, float]) -> float:
+	return _normalize_angle(math.degrees(math.atan2(point[1] - center[1], point[0] - center[0])))
+
+
+def _clockwise_delta_deg(start_deg: float, end_deg: float) -> float:
+	return _normalize_angle(end_deg - start_deg)
+
+
+def _counterclockwise_delta_deg(start_deg: float, end_deg: float) -> float:
+	return _normalize_angle(start_deg - end_deg)
+
+
+def calculate_gauge_reading(
+	center: tuple[float, float],
+	pointer_tip: tuple[float, float],
+	min_point: tuple[float, float],
+	max_point: tuple[float, float],
+	min_value: float = 0.0,
+	max_value: float = 100.0,
+) -> dict[str, float | str]:
+	"""Calculate a gauge reading from 4 pose keypoints.
+
+	Keypoint order:
+	1. center of dial
+	2. tip of pointer
+	3. minimum-scale point
+	4. maximum-scale point
+	"""
+	if max_value <= min_value:
+		raise ValueError("max_value must be greater than min_value")
+
+	min_angle = _point_angle_deg(center, min_point)
+	max_angle = _point_angle_deg(center, max_point)
+	pointer_angle = _point_angle_deg(center, pointer_tip)
+
+	cw_range = _clockwise_delta_deg(min_angle, max_angle)
+	cw_pointer = _clockwise_delta_deg(min_angle, pointer_angle)
+	ccw_range = _counterclockwise_delta_deg(min_angle, max_angle)
+	ccw_pointer = _counterclockwise_delta_deg(min_angle, pointer_angle)
+
+	if cw_range == 0.0 or ccw_range == 0.0:
+		raise ValueError("Minimum point and maximum point must not overlap")
+
+	if cw_pointer <= cw_range:
+		sweep_direction = "clockwise"
+		full_scale_angle = cw_range
+		pointer_angle_from_min = cw_pointer
+	else:
+		sweep_direction = "counterclockwise"
+		full_scale_angle = ccw_range
+		pointer_angle_from_min = min(ccw_pointer, ccw_range)
+
+	ratio = 0.0 if full_scale_angle == 0.0 else pointer_angle_from_min / full_scale_angle
+	ratio = max(0.0, min(1.0, ratio))
+	reading = min_value + ratio * (max_value - min_value)
+
+	return {
+		"reading": reading,
+		"ratio": ratio,
+		"pointer_angle_deg": pointer_angle_from_min,
+		"full_scale_angle_deg": full_scale_angle,
+		"sweep_direction": sweep_direction,
+		"min_angle_deg": min_angle,
+		"max_angle_deg": max_angle,
+		"pointer_absolute_angle_deg": pointer_angle,
+	}
+
+
+def calculate_gauge_reading_from_keypoints(
+	keypoints: list[list[float]] | list[tuple[float, float]] | tuple[tuple[float, float], ...],
+	min_value: float = 0.0,
+	max_value: float = 100.0,
+) -> dict[str, float | str]:
+	if len(keypoints) < 4:
+		raise ValueError("At least 4 keypoints are required: center, pointer tip, min point, max point")
+
+	center = tuple(float(value) for value in keypoints[0][:2])
+	pointer_tip = tuple(float(value) for value in keypoints[1][:2])
+	min_point = tuple(float(value) for value in keypoints[2][:2])
+	max_point = tuple(float(value) for value in keypoints[3][:2])
+	return calculate_gauge_reading(center, pointer_tip, min_point, max_point, min_value=min_value, max_value=max_value)
+
+
+def parse_args():
+	parser = argparse.ArgumentParser(description="Read an image, run pose inference, and show the result.")
+	parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="Path to the trained .pt model")
+	parser.add_argument("--image", default=DEFAULT_IMAGE_PATH, help="Path to the input image")
+	parser.add_argument("--conf", type=float, default=DEFAULT_CONF, help="Confidence threshold")
+	parser.add_argument("--imgsz", type=int, default=256, help="Inference image size")
+	parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directory to save the annotated image")
+	parser.add_argument("--save", action="store_true", help="Save the annotated image to disk")
+	parser.add_argument("--no-show", action="store_true", help="Do not open a display window")
+	return parser.parse_args()
+
+
+def validate_path(path_value: str, description: str) -> Path:
+	path = Path(path_value)
+	if not path.exists():
+		raise FileNotFoundError(f"{description} does not exist: {path}")
+	return path
+
+
+def main():
+	args = parse_args()
+	model_path = validate_path(args.model, "Model file")
+	image_path = validate_path(args.image, "Image file")
+
+	model = YOLO(str(model_path))
+	results = model.predict(source=str(image_path), conf=args.conf, imgsz=args.imgsz, verbose=False)
+	result = results[0]
+	annotated_image = result.plot()
+
+	boxes = 0 if result.boxes is None else len(result.boxes)
+	keypoints = 0 if result.keypoints is None else len(result.keypoints)
+	print(f"Inference complete: detected {boxes} object(s), pose set(s): {keypoints}")
+	if boxes == 0:
+		print(f"No detections passed conf={args.conf:.3f}. Try a lower threshold, e.g. --conf 0.01")
+	elif result.boxes is not None and result.boxes.conf is not None:
+		confidences = [f"{score:.4f}" for score in result.boxes.conf.cpu().tolist()]
+		print(f"Detection confidences: {', '.join(confidences)}")
+
+	if result.keypoints is not None and result.keypoints.xy is not None:
+		for index, pose_keypoints in enumerate(result.keypoints.xy.cpu().tolist(), start=1):
+			if len(pose_keypoints) < 4:
+				continue
+			gauge_result = calculate_gauge_reading_from_keypoints(pose_keypoints)
+			print(
+				f"Gauge {index}: reading={gauge_result['reading']:.2f}, "
+				f"ratio={gauge_result['ratio']:.4f}, "
+				f"pointer_angle={gauge_result['pointer_angle_deg']:.2f} deg, "
+				f"full_scale_angle={gauge_result['full_scale_angle_deg']:.2f} deg, "
+				f"direction={gauge_result['sweep_direction']}"
+			)
+
+	output_path = None
+	if args.save or args.no_show:
+		output_dir = Path(args.output_dir)
+		output_dir.mkdir(parents=True, exist_ok=True)
+		output_path = output_dir / f"{image_path.stem}_pred.jpg"
+		cv2.imwrite(str(output_path), annotated_image)
+		print(f"Annotated image saved to: {output_path}")
+
+	if args.no_show:
+		return
+
+	try:
+		cv2.imshow("Pose Inference Demo", annotated_image)
+		print("Press any key in the image window to close.")
+		cv2.waitKey(0)
+	except cv2.error as exc:
+		if output_path is None:
+			output_dir = Path(args.output_dir)
+			output_dir.mkdir(parents=True, exist_ok=True)
+			output_path = output_dir / f"{image_path.stem}_pred.jpg"
+			cv2.imwrite(str(output_path), annotated_image)
+			print(f"Display unavailable, annotated image saved to: {output_path}")
+		raise RuntimeError(
+			"OpenCV display is unavailable in the current environment. Use --no-show or view the saved image."
+		) from exc
+	finally:
+		cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+	main()
