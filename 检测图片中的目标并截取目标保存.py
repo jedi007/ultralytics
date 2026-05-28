@@ -8,7 +8,7 @@ from ultralytics import YOLO
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL_PATH = SCRIPT_DIR / 'yolo26s_det_instrument_260427.pt'
+DEFAULT_MODEL_PATH = SCRIPT_DIR / 'det_instrument_20260430.pt'
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.webp'}
 
 # 脚本配置区：直接修改这些常量即可，无需命令行传参。

@@ -8,7 +8,7 @@ import numpy as np
 from ultralytics import YOLO
 
 
-DEFAULT_MODEL_PATH = "pose_instrument_20260527.pt"
+DEFAULT_MODEL_PATH = "pose_instrument_20260528.pt"
 DEFAULT_IMAGE_PATH = "test_images/camera_capture_2026-04-24-03-43-31_9305_obj002.jpg"
 DEFAULT_OUTPUT_DIR = "runs/pose_demo"
 DEFAULT_CONF = 0.01
