@@ -29,4 +29,5 @@ kpt_names:
     - current_value
     - min_value
     - max_value
+    - midel_value
 

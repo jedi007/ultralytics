@@ -13,7 +13,7 @@ epochs: 10 # (int) number of epochs to train for
 time: # (float, optional) max hours to train; overrides epochs if set
 patience: 100 # (int) early stop after N epochs without val improvement
 batch: 8 # (int | float) batch size as int (e.g. 16), or float 0.0–1.0 for AutoBatch fraction of GPU memory
-imgsz: [256, 256] # (int | list) train/val use int (square); predict/export may use [h,w]
+imgsz: [512, 512] # (int | list) train/val use int (square); predict/export may use [h,w]
 save: True # (bool) save train checkpoints and predict results
 save_period: -1 # (int) save checkpoint every N epochs; disabled if < 1
 cache: False # (bool | str) cache images in RAM (True/'ram') or on 'disk' to speed dataloading; False disables
@@ -99,12 +99,12 @@ weight_decay: 0.0005 # (float) weight decay (L2 regularization)
 warmup_epochs: 3.0 # (float) warmup epochs (fractions allowed)
 warmup_momentum: 0.8 # (float) initial momentum during warmup
 warmup_bias_lr: 0.1 # (float) bias learning rate during warmup
-box: 7.5 # (float) box loss gain
+box: 2.5 # (float) box loss gain
 cls: 0.5 # (float) classification loss gain
 cls_pw: 0.0 # (float) class weights power for handling class imbalance (0.0=disable, 1.0=full inverse frequency)
 dfl: 1.5 # (float) distribution focal loss gain
-pose: 12.0 # (float) pose loss gain (pose tasks)
-kobj: 1.0 # (float) keypoint objectness loss gain (pose tasks)
+pose: 24.0 # (float) pose loss gain (pose tasks)
+kobj: 2.0 # (float) keypoint objectness loss gain (pose tasks)
 rle: 1.0 # (float) rle loss gain (pose tasks)
 angle: 1.0 # (float) oriented angle loss gain (obb tasks)
 nbs: 64 # (int) nominal batch size used for loss normalization

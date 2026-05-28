@@ -9,10 +9,10 @@ from ultralytics import YOLO
 
 
 DEFAULT_MODEL_PATH = "pose_instrument_20260528.pt"
-DEFAULT_IMAGE_PATH = "test_images/camera_capture_2026-04-24-03-43-31_9305_obj002.jpg"
+DEFAULT_IMAGE_PATH = "test_images/camera_capture_2026-04-24-03-43-31_9305_obj001.jpg"
 DEFAULT_OUTPUT_DIR = "runs/pose_demo"
 DEFAULT_CONF = 0.01
-DEFAULT_FRONT_VIEW_RADIUS = 128.0
+DEFAULT_FRONT_VIEW_RADIUS = 256.0
 DEFAULT_FRONT_VIEW_ANCHOR_POINTS = [
 	(DEFAULT_FRONT_VIEW_RADIUS, DEFAULT_FRONT_VIEW_RADIUS),
 	(
@@ -23,6 +23,7 @@ DEFAULT_FRONT_VIEW_ANCHOR_POINTS = [
 		DEFAULT_FRONT_VIEW_RADIUS * (1.0 + math.sqrt(0.5)),
 		DEFAULT_FRONT_VIEW_RADIUS * (1.0 + math.sqrt(0.5)),
 	),
+	(DEFAULT_FRONT_VIEW_RADIUS, 0.0),
 ]
 print(f"Default front view anchor points: {DEFAULT_FRONT_VIEW_ANCHOR_POINTS}")
 
@@ -133,44 +134,49 @@ def rectify_gauge_keypoints(
 ) -> dict[str, object]:
 	"""Map detected gauge keypoints into a front-view coordinate system.
 
-	The first 3 anchor points are ordered as:
+	Detected keypoints are ordered as:
+	1. center of dial
+	2. tip of pointer
+	3. minimum-scale point
+	4. maximum-scale point
+	5. top reference point on the dial rim
+
+	Front-view anchor points are ordered as:
 	1. center of dial
 	2. minimum-scale point
 	3. maximum-scale point
+	4. top reference point on the dial rim
 
-	If a 4th anchor pair is provided through extra_detected_reference_point and
-	extra_front_view_reference_point, a perspective transform can be estimated.
-	Otherwise, a 3-point affine transform is used, which is the strongest correction
-	available from only center/min/max correspondences.
+	Perspective rectification uses detected keypoints 1, 3, 4, 5 mapped to front-view
+	anchor points 1, 2, 3, 4. If those points are unavailable, a 3-point affine
+	transform is used as a fallback unless method="perspective" is requested.
 	"""
 	if method not in {"auto", "affine", "perspective"}:
 		raise ValueError("method must be one of: auto, affine, perspective")
 
-	detected_points = _points_to_float32(detected_keypoints, 4, "detected_keypoints")
-	front_view_points = _points_to_float32(front_view_anchor_points, 3, "front_view_anchor_points")
+	requires_perspective_anchors = (
+		len(detected_keypoints) >= 5 and len(front_view_anchor_points) >= 4
+	)
+	detected_required_count = 5 if method == "perspective" or requires_perspective_anchors else 4
+	front_view_required_count = 4 if method == "perspective" or requires_perspective_anchors else 3
+
+	detected_points = _points_to_float32(detected_keypoints, detected_required_count, "detected_keypoints")
+	front_view_points = _points_to_float32(front_view_anchor_points, front_view_required_count, "front_view_anchor_points")
 
 	source_anchor_points = [detected_points[0], detected_points[2], detected_points[3]]
 	destination_anchor_points = front_view_points[:3]
 
 	transform_method = method
 	if method == "auto":
-		transform_method = (
-			"perspective"
-			if extra_detected_reference_point is not None and extra_front_view_reference_point is not None
-			else "affine"
-		)
+		transform_method = "perspective" if requires_perspective_anchors else "affine"
 
 	if transform_method == "perspective":
-		if extra_detected_reference_point is None or extra_front_view_reference_point is None:
+		if len(detected_points) < 5 or len(front_view_points) < 4:
 			raise ValueError(
-				"Perspective rectification requires extra_detected_reference_point and extra_front_view_reference_point"
+				"Perspective rectification requires detected keypoints 1,3,4,5 and front-view anchor points 1,2,3,4"
 			)
-		source_quad = np.array(
-			source_anchor_points + [tuple(float(value) for value in extra_detected_reference_point[:2])], dtype=np.float32
-		)
-		destination_quad = np.array(
-			destination_anchor_points + [tuple(float(value) for value in extra_front_view_reference_point[:2])], dtype=np.float32
-		)
+		source_quad = np.array(source_anchor_points + [detected_points[4]], dtype=np.float32)
+		destination_quad = np.array(destination_anchor_points + [front_view_points[3]], dtype=np.float32)
 		transform_matrix = cv2.getPerspectiveTransform(source_quad, destination_quad)
 		transformed = cv2.perspectiveTransform(np.array([detected_points], dtype=np.float32), transform_matrix)[0]
 	else:
@@ -223,7 +229,7 @@ def parse_args():
 	parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="Path to the trained .pt model")
 	parser.add_argument("--image", default=DEFAULT_IMAGE_PATH, help="Path to the input image")
 	parser.add_argument("--conf", type=float, default=DEFAULT_CONF, help="Confidence threshold")
-	parser.add_argument("--imgsz", type=int, default=256, help="Inference image size")
+	parser.add_argument("--imgsz", type=int, default=512, help="Inference image size")
 	parser.add_argument("--min-value", type=float, default=0.0, help="Gauge minimum value")
 	parser.add_argument("--max-value", type=float, default=100.0, help="Gauge maximum value")
 	parser.add_argument(
