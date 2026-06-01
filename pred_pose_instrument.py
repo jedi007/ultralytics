@@ -19,7 +19,7 @@ DEFAULT_RECTIFY_METHOD = "auto"
 DEFAULT_EXTRA_DETECTED_REF = None
 DEFAULT_EXTRA_FRONT_REF = None
 DEFAULT_SAVE = False
-DEFAULT_NO_SHOW = True
+DEFAULT_NO_SHOW = False
 DEFAULT_FRONT_VIEW_RADIUS = 256.0
 DEFAULT_FRONT_VIEW_ANCHOR_POINTS = [
 	(DEFAULT_FRONT_VIEW_RADIUS, DEFAULT_FRONT_VIEW_RADIUS),
@@ -255,6 +255,8 @@ class InstrumentGaugeReader:
 		self.extra_detected_ref = extra_detected_ref
 		self.extra_front_ref = extra_front_ref
 		self.model = YOLO(str(self.model_path))
+		self.last_result: Any | None = None
+		self.last_reading_details: dict[str, Any] | None = None
 
 	def predict(self, image: np.ndarray):
 		if image is None or not isinstance(image, np.ndarray):
@@ -264,6 +266,10 @@ class InstrumentGaugeReader:
 	def extract_reading_details(self, result: Any) -> dict[str, Any] | None:
 		if result.keypoints is None or result.keypoints.xy is None:
 			return None
+
+		confidences: list[float] = []
+		if result.boxes is not None and result.boxes.conf is not None:
+			confidences = [float(score) for score in result.boxes.conf.cpu().tolist()]
 
 		for index, pose_keypoints in enumerate(result.keypoints.xy.cpu().tolist(), start=1):
 			if len(pose_keypoints) < 4:
@@ -283,6 +289,7 @@ class InstrumentGaugeReader:
 
 			return {
 				"gauge_index": index,
+				"confidence": confidences[index - 1] if index - 1 < len(confidences) else None,
 				"result": result,
 				"keypoints": pose_keypoints,
 				**gauge_result,
@@ -299,6 +306,32 @@ class InstrumentGaugeReader:
 		if reading_details is None:
 			return None
 		return float(reading_details["reading"])
+
+	def forward(self, image: np.ndarray, min_value: float, max_value: float) -> tuple[float | None, float | None]:
+		result = self.predict(image)
+		self.last_result = result
+		reading_details = self.extract_reading_details(result)
+		self.last_reading_details = reading_details
+		if reading_details is None:
+			return None, None
+
+		try:
+			gauge_result = calculate_gauge_reading_with_rectification(
+				reading_details["keypoints"],
+				front_view_anchor_points=self.front_view_anchor_points,
+				min_value=min_value,
+				max_value=max_value,
+				method=self.rectify_method,
+				extra_detected_reference_point=self.extra_detected_ref,
+				extra_front_view_reference_point=self.extra_front_ref,
+			)
+		except ValueError:
+			return None, None
+
+		confidence = reading_details["confidence"]
+		if confidence is None:
+			return float(gauge_result["reading"]), None
+		return float(gauge_result["reading"]), float(confidence)
 
 
 def validate_path(path_value: str, description: str) -> Path:
@@ -324,7 +357,11 @@ def main():
 		extra_detected_ref=DEFAULT_EXTRA_DETECTED_REF,
 		extra_front_ref=DEFAULT_EXTRA_FRONT_REF,
 	)
-	result = reader.predict(image)
+	reading, confidence = reader.forward(image, DEFAULT_MIN_VALUE, DEFAULT_MAX_VALUE)
+	result = reader.last_result
+	reading_details = reader.last_reading_details
+	if result is None:
+		raise RuntimeError("InstrumentGaugeReader.forward() did not produce an inference result")
 	annotated_image = result.plot()
 
 	boxes = 0 if result.boxes is None else len(result.boxes)
@@ -336,14 +373,15 @@ def main():
 		confidences = [f"{score:.4f}" for score in result.boxes.conf.cpu().tolist()]
 		print(f"Detection confidences: {', '.join(confidences)}")
 
-	reading_details = reader.extract_reading_details(result)
-	if reading_details is None:
+	if reading is None:
 		print("No valid gauge reading found.")
 	else:
+		if reading_details is None:
+			raise RuntimeError("InstrumentGaugeReader.forward() returned a reading without details")
 		center_x, center_y = (int(round(value)) for value in reading_details["keypoints"][0][:2])
 		cv2.putText(
 			annotated_image,
-			f"Gauge {reading_details['gauge_index']}: {reading_details['reading']:.2f}",
+			f"Gauge {reading_details['gauge_index']}: {reading:.2f}",
 			(center_x + 10, center_y - 10),
 			cv2.FONT_HERSHEY_SIMPLEX,
 			0.7,
@@ -352,8 +390,10 @@ def main():
 			cv2.LINE_AA,
 		)
 
+		confidence_text = f"{confidence:.4f}" if confidence is not None else "None"
 		print(
-			f"Gauge {reading_details['gauge_index']}: reading={reading_details['reading']:.2f}, "
+			f"Gauge {reading_details['gauge_index']}: reading={reading:.2f}, "
+			f"confidence={confidence_text}, "
 			f"ratio={reading_details['ratio']:.4f}, "
 			f"pointer_angle={reading_details['pointer_angle_deg']:.2f} deg, "
 			f"full_scale_angle={reading_details['full_scale_angle_deg']:.2f} deg, "
