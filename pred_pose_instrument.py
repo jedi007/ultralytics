@@ -1,5 +1,4 @@
 from pathlib import Path
-import argparse
 import math
 from typing import Any
 
@@ -13,6 +12,14 @@ DEFAULT_MODEL_PATH = "pose_instrument_20260528.pt"
 DEFAULT_IMAGE_PATH = "test_images/camera_capture_2026-04-24-03-43-31_9305_obj001.jpg"
 DEFAULT_OUTPUT_DIR = "runs/pose_demo"
 DEFAULT_CONF = 0.01
+DEFAULT_IMGSZ = 512
+DEFAULT_MIN_VALUE = 0.0
+DEFAULT_MAX_VALUE = 100.0
+DEFAULT_RECTIFY_METHOD = "auto"
+DEFAULT_EXTRA_DETECTED_REF = None
+DEFAULT_EXTRA_FRONT_REF = None
+DEFAULT_SAVE = False
+DEFAULT_NO_SHOW = True
 DEFAULT_FRONT_VIEW_RADIUS = 256.0
 DEFAULT_FRONT_VIEW_ANCHOR_POINTS = [
 	(DEFAULT_FRONT_VIEW_RADIUS, DEFAULT_FRONT_VIEW_RADIUS),
@@ -230,10 +237,10 @@ class InstrumentGaugeReader:
 		self,
 		model_path: str | Path = DEFAULT_MODEL_PATH,
 		conf: float = DEFAULT_CONF,
-		imgsz: int = 512,
-		min_value: float = 0.0,
-		max_value: float = 100.0,
-		rectify_method: str = "auto",
+		imgsz: int = DEFAULT_IMGSZ,
+		min_value: float = DEFAULT_MIN_VALUE,
+		max_value: float = DEFAULT_MAX_VALUE,
+		rectify_method: str = DEFAULT_RECTIFY_METHOD,
 		front_view_anchor_points: list[tuple[float, float]] | None = None,
 		extra_detected_ref: tuple[float, float] | None = None,
 		extra_front_ref: tuple[float, float] | None = None,
@@ -249,9 +256,9 @@ class InstrumentGaugeReader:
 		self.extra_front_ref = extra_front_ref
 		self.model = YOLO(str(self.model_path))
 
-	def _predict(self, image: str | Path | np.ndarray):
-		if isinstance(image, (str, Path)):
-			image = str(validate_path(str(image), "Image file"))
+	def predict(self, image: np.ndarray):
+		if image is None or not isinstance(image, np.ndarray):
+			raise ValueError("image must be a loaded numpy.ndarray")
 		return self.model.predict(source=image, conf=self.conf, imgsz=self.imgsz, verbose=False)[0]
 
 	def extract_reading_details(self, result: Any) -> dict[str, Any] | None:
@@ -283,49 +290,15 @@ class InstrumentGaugeReader:
 
 		return None
 
-	def read_image_details(self, image: str | Path | np.ndarray) -> dict[str, Any] | None:
-		result = self._predict(image)
+	def read_image_details(self, image: np.ndarray) -> dict[str, Any] | None:
+		result = self.predict(image)
 		return self.extract_reading_details(result)
 
-	def read_image(self, image: str | Path | np.ndarray) -> float | None:
+	def read_image(self, image: np.ndarray) -> float | None:
 		reading_details = self.read_image_details(image)
 		if reading_details is None:
 			return None
 		return float(reading_details["reading"])
-
-
-def parse_args():
-	parser = argparse.ArgumentParser(description="Read an image, run pose inference, and show the result.")
-	parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="Path to the trained .pt model")
-	parser.add_argument("--image", default=DEFAULT_IMAGE_PATH, help="Path to the input image")
-	parser.add_argument("--conf", type=float, default=DEFAULT_CONF, help="Confidence threshold")
-	parser.add_argument("--imgsz", type=int, default=512, help="Inference image size")
-	parser.add_argument("--min-value", type=float, default=0.0, help="Gauge minimum value")
-	parser.add_argument("--max-value", type=float, default=100.0, help="Gauge maximum value")
-	parser.add_argument(
-		"--rectify-method",
-		choices=["auto", "affine", "perspective"],
-		default="auto",
-		help="Rectification method before gauge reading",
-	)
-	parser.add_argument(
-		"--extra-detected-ref",
-		nargs=2,
-		type=float,
-		metavar=("X", "Y"),
-		help="Optional 4th detected reference point for perspective rectification",
-	)
-	parser.add_argument(
-		"--extra-front-ref",
-		nargs=2,
-		type=float,
-		metavar=("X", "Y"),
-		help="Optional 4th front-view reference point for perspective rectification",
-	)
-	parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directory to save the annotated image")
-	parser.add_argument("--save", action="store_true", help="Save the annotated image to disk")
-	parser.add_argument("--no-show", action="store_true", help="Do not open a display window")
-	return parser.parse_args()
 
 
 def validate_path(path_value: str, description: str) -> Path:
@@ -336,26 +309,29 @@ def validate_path(path_value: str, description: str) -> Path:
 
 
 def main():
-	args = parse_args()
-	image_path = validate_path(args.image, "Image file")
+	image_path = validate_path(DEFAULT_IMAGE_PATH, "Image file")
+	image = cv2.imread(str(image_path))
+	if image is None:
+		raise ValueError(f"Failed to read image data from: {image_path}")
+
 	reader = InstrumentGaugeReader(
-		model_path=args.model,
-		conf=args.conf,
-		imgsz=args.imgsz,
-		min_value=args.min_value,
-		max_value=args.max_value,
-		rectify_method=args.rectify_method,
-		extra_detected_ref=tuple(args.extra_detected_ref) if args.extra_detected_ref else None,
-		extra_front_ref=tuple(args.extra_front_ref) if args.extra_front_ref else None,
+		model_path=DEFAULT_MODEL_PATH,
+		conf=DEFAULT_CONF,
+		imgsz=DEFAULT_IMGSZ,
+		min_value=DEFAULT_MIN_VALUE,
+		max_value=DEFAULT_MAX_VALUE,
+		rectify_method=DEFAULT_RECTIFY_METHOD,
+		extra_detected_ref=DEFAULT_EXTRA_DETECTED_REF,
+		extra_front_ref=DEFAULT_EXTRA_FRONT_REF,
 	)
-	result = reader._predict(image_path)
+	result = reader.predict(image)
 	annotated_image = result.plot()
 
 	boxes = 0 if result.boxes is None else len(result.boxes)
 	keypoints = 0 if result.keypoints is None else len(result.keypoints)
 	print(f"Inference complete: detected {boxes} object(s), pose set(s): {keypoints}")
 	if boxes == 0:
-		print(f"No detections passed conf={args.conf:.3f}. Try a lower threshold, e.g. --conf 0.01")
+		print(f"No detections passed conf={DEFAULT_CONF:.3f}. Try a lower threshold, e.g. set DEFAULT_CONF = 0.01")
 	elif result.boxes is not None and result.boxes.conf is not None:
 		confidences = [f"{score:.4f}" for score in result.boxes.conf.cpu().tolist()]
 		print(f"Detection confidences: {', '.join(confidences)}")
@@ -387,14 +363,14 @@ def main():
 			print(f"Gauge {reading_details['gauge_index']}: rectified with {reading_details['transform_method']} transform")
 
 	output_path = None
-	if args.save or args.no_show:
-		output_dir = Path(args.output_dir)
+	if DEFAULT_SAVE or DEFAULT_NO_SHOW:
+		output_dir = Path(DEFAULT_OUTPUT_DIR)
 		output_dir.mkdir(parents=True, exist_ok=True)
 		output_path = output_dir / f"{image_path.stem}_pred.jpg"
 		cv2.imwrite(str(output_path), annotated_image)
 		print(f"Annotated image saved to: {output_path}")
 
-	if args.no_show:
+	if DEFAULT_NO_SHOW:
 		return
 
 	try:
@@ -403,7 +379,7 @@ def main():
 		cv2.waitKey(0)
 	except cv2.error as exc:
 		if output_path is None:
-			output_dir = Path(args.output_dir)
+			output_dir = Path(DEFAULT_OUTPUT_DIR)
 			output_dir.mkdir(parents=True, exist_ok=True)
 			output_path = output_dir / f"{image_path.stem}_pred.jpg"
 			cv2.imwrite(str(output_path), annotated_image)
