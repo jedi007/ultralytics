@@ -1,6 +1,7 @@
 from pathlib import Path
 import argparse
 import math
+from typing import Any
 
 import cv2
 import numpy as np
@@ -224,6 +225,75 @@ def calculate_gauge_reading_with_rectification(
 	}
 
 
+class InstrumentGaugeReader:
+	def __init__(
+		self,
+		model_path: str | Path = DEFAULT_MODEL_PATH,
+		conf: float = DEFAULT_CONF,
+		imgsz: int = 512,
+		min_value: float = 0.0,
+		max_value: float = 100.0,
+		rectify_method: str = "auto",
+		front_view_anchor_points: list[tuple[float, float]] | None = None,
+		extra_detected_ref: tuple[float, float] | None = None,
+		extra_front_ref: tuple[float, float] | None = None,
+	) -> None:
+		self.model_path = validate_path(str(model_path), "Model file")
+		self.conf = conf
+		self.imgsz = imgsz
+		self.min_value = min_value
+		self.max_value = max_value
+		self.rectify_method = rectify_method
+		self.front_view_anchor_points = front_view_anchor_points or DEFAULT_FRONT_VIEW_ANCHOR_POINTS
+		self.extra_detected_ref = extra_detected_ref
+		self.extra_front_ref = extra_front_ref
+		self.model = YOLO(str(self.model_path))
+
+	def _predict(self, image: str | Path | np.ndarray):
+		if isinstance(image, (str, Path)):
+			image = str(validate_path(str(image), "Image file"))
+		return self.model.predict(source=image, conf=self.conf, imgsz=self.imgsz, verbose=False)[0]
+
+	def extract_reading_details(self, result: Any) -> dict[str, Any] | None:
+		if result.keypoints is None or result.keypoints.xy is None:
+			return None
+
+		for index, pose_keypoints in enumerate(result.keypoints.xy.cpu().tolist(), start=1):
+			if len(pose_keypoints) < 4:
+				continue
+			try:
+				gauge_result = calculate_gauge_reading_with_rectification(
+					pose_keypoints,
+					front_view_anchor_points=self.front_view_anchor_points,
+					min_value=self.min_value,
+					max_value=self.max_value,
+					method=self.rectify_method,
+					extra_detected_reference_point=self.extra_detected_ref,
+					extra_front_view_reference_point=self.extra_front_ref,
+				)
+			except ValueError:
+				continue
+
+			return {
+				"gauge_index": index,
+				"result": result,
+				"keypoints": pose_keypoints,
+				**gauge_result,
+			}
+
+		return None
+
+	def read_image_details(self, image: str | Path | np.ndarray) -> dict[str, Any] | None:
+		result = self._predict(image)
+		return self.extract_reading_details(result)
+
+	def read_image(self, image: str | Path | np.ndarray) -> float | None:
+		reading_details = self.read_image_details(image)
+		if reading_details is None:
+			return None
+		return float(reading_details["reading"])
+
+
 def parse_args():
 	parser = argparse.ArgumentParser(description="Read an image, run pose inference, and show the result.")
 	parser.add_argument("--model", default=DEFAULT_MODEL_PATH, help="Path to the trained .pt model")
@@ -267,12 +337,18 @@ def validate_path(path_value: str, description: str) -> Path:
 
 def main():
 	args = parse_args()
-	model_path = validate_path(args.model, "Model file")
 	image_path = validate_path(args.image, "Image file")
-
-	model = YOLO(str(model_path))
-	results = model.predict(source=str(image_path), conf=args.conf, imgsz=args.imgsz, verbose=False)
-	result = results[0]
+	reader = InstrumentGaugeReader(
+		model_path=args.model,
+		conf=args.conf,
+		imgsz=args.imgsz,
+		min_value=args.min_value,
+		max_value=args.max_value,
+		rectify_method=args.rectify_method,
+		extra_detected_ref=tuple(args.extra_detected_ref) if args.extra_detected_ref else None,
+		extra_front_ref=tuple(args.extra_front_ref) if args.extra_front_ref else None,
+	)
+	result = reader._predict(image_path)
 	annotated_image = result.plot()
 
 	boxes = 0 if result.boxes is None else len(result.boxes)
@@ -284,43 +360,31 @@ def main():
 		confidences = [f"{score:.4f}" for score in result.boxes.conf.cpu().tolist()]
 		print(f"Detection confidences: {', '.join(confidences)}")
 
-	if result.keypoints is not None and result.keypoints.xy is not None:
-		front_view_anchor_points = DEFAULT_FRONT_VIEW_ANCHOR_POINTS
+	reading_details = reader.extract_reading_details(result)
+	if reading_details is None:
+		print("No valid gauge reading found.")
+	else:
+		center_x, center_y = (int(round(value)) for value in reading_details["keypoints"][0][:2])
+		cv2.putText(
+			annotated_image,
+			f"Gauge {reading_details['gauge_index']}: {reading_details['reading']:.2f}",
+			(center_x + 10, center_y - 10),
+			cv2.FONT_HERSHEY_SIMPLEX,
+			0.7,
+			(0, 255, 255),
+			2,
+			cv2.LINE_AA,
+		)
 
-		for index, pose_keypoints in enumerate(result.keypoints.xy.cpu().tolist(), start=1):
-			if len(pose_keypoints) < 4:
-				continue
-			gauge_result = calculate_gauge_reading_with_rectification(
-				pose_keypoints,
-				front_view_anchor_points=front_view_anchor_points,
-				min_value=args.min_value,
-				max_value=args.max_value,
-				method=args.rectify_method,
-				extra_detected_reference_point=tuple(args.extra_detected_ref) if args.extra_detected_ref else None,
-				extra_front_view_reference_point=tuple(args.extra_front_ref) if args.extra_front_ref else None,
-			)
-
-			center_x, center_y = (int(round(value)) for value in pose_keypoints[0][:2])
-			cv2.putText(
-				annotated_image,
-				f"Gauge {index}: {gauge_result['reading']:.2f}",
-				(center_x + 10, center_y - 10),
-				cv2.FONT_HERSHEY_SIMPLEX,
-				0.7,
-				(0, 255, 255),
-				2,
-				cv2.LINE_AA,
-			)
-
-			print(
-				f"Gauge {index}: reading={gauge_result['reading']:.2f}, "
-				f"ratio={gauge_result['ratio']:.4f}, "
-				f"pointer_angle={gauge_result['pointer_angle_deg']:.2f} deg, "
-				f"full_scale_angle={gauge_result['full_scale_angle_deg']:.2f} deg, "
-				f"direction={gauge_result['sweep_direction']}"
-			)
-			if "transform_method" in gauge_result:
-				print(f"Gauge {index}: rectified with {gauge_result['transform_method']} transform")
+		print(
+			f"Gauge {reading_details['gauge_index']}: reading={reading_details['reading']:.2f}, "
+			f"ratio={reading_details['ratio']:.4f}, "
+			f"pointer_angle={reading_details['pointer_angle_deg']:.2f} deg, "
+			f"full_scale_angle={reading_details['full_scale_angle_deg']:.2f} deg, "
+			f"direction={reading_details['sweep_direction']}"
+		)
+		if "transform_method" in reading_details:
+			print(f"Gauge {reading_details['gauge_index']}: rectified with {reading_details['transform_method']} transform")
 
 	output_path = None
 	if args.save or args.no_show:
