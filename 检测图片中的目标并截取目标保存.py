@@ -13,11 +13,12 @@ IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.webp'}
 
 # 脚本配置区：直接修改这些常量即可，无需命令行传参。
 MODEL_PATH = DEFAULT_MODEL_PATH
-INPUT_PATH = Path('/home/robot/gitlab/AIDATA/仪表/指针读数测试')
-OUTPUT_PATH = Path('/home/robot/gitlab/AIDATA/仪表/指针读数测试_cropped')
+INPUT_PATH = Path('/home/robot/cache/camera_capture')
+OUTPUT_PATH = Path('/home/robot/cache/camera_capture_crops')
 CONFIDENCE_THRESHOLD = 0.25
 IMAGE_SIZE = (384, 640)
 CLASS_FILTER = None
+MIN_CROP_SIZE = (256,256)
 
 
 def collect_images(input_path: Path):
@@ -61,7 +62,14 @@ def clamp_box(x1, y1, x2, y2, width, height):
 	return x1, y1, x2, y2
 
 
-def save_crops(result, image_path: Path, input_root: Path, output_root: Path, class_filter=None):
+def save_crops(
+	result,
+	image_path: Path,
+	input_root: Path,
+	output_root: Path,
+	class_filter=None,
+	min_crop_size: tuple[int, int] | None = None,
+):
 	boxes = result.boxes
 	if boxes is None or len(boxes) == 0:
 		return 0
@@ -79,6 +87,13 @@ def save_crops(result, image_path: Path, input_root: Path, output_root: Path, cl
 		x1, y1, x2, y2 = clamp_box(*xyxy, image_width, image_height)
 		if x2 <= x1 or y2 <= y1:
 			continue
+
+		crop_width = x2 - x1
+		crop_height = y2 - y1
+		if min_crop_size is not None:
+			min_width, min_height = min_crop_size
+			if crop_width < min_width or crop_height < min_height:
+				continue
 
 		crop = image[y1:y2, x1:x2]
 		if crop.size == 0:
@@ -99,6 +114,7 @@ def main():
 	input_path = Path(INPUT_PATH).expanduser().resolve()
 	output_path = Path(OUTPUT_PATH).expanduser().resolve()
 	class_filter = set(CLASS_FILTER) if CLASS_FILTER else None
+	min_crop_size = tuple(MIN_CROP_SIZE) if MIN_CROP_SIZE else None
 
 	if not model_path.is_file():
 		raise FileNotFoundError(f'模型文件不存在: {model_path}')
@@ -118,10 +134,19 @@ def main():
 	print(f'待处理图片数: {total_images}')
 	if class_filter:
 		print(f'类别过滤: {sorted(class_filter)}')
+	if min_crop_size:
+		print(f'最小裁剪尺寸: {min_crop_size[0]}x{min_crop_size[1]}')
 
 	for image_index, image_path in enumerate(image_paths, start=1):
 		results = model.predict(source=str(image_path), conf=CONFIDENCE_THRESHOLD, imgsz=IMAGE_SIZE, verbose=False)
-		saved_count = save_crops(results[0], image_path, input_path, output_path, class_filter)
+		saved_count = save_crops(
+			results[0],
+			image_path,
+			input_path,
+			output_path,
+			class_filter,
+			min_crop_size=min_crop_size,
+		)
 		total_crops += saved_count
 		if saved_count > 0:
 			detected_images += 1
