@@ -156,10 +156,11 @@ def evaluate_disputes_by_index(
 	gt_objects: list[YoloObject],
 	pred_objects: list[YoloObject],
 	iou_threshold: float,
-) -> tuple[bool, list[int]]:
-	"""按索引对应比较，返回是否争议及争议预测索引列表。"""
+	) -> tuple[bool, list[int], list[int], list[int]]:
+	"""按索引对应比较，返回是否争议、争议配对索引、额外 GT 索引、额外预测索引。"""
 	min_len = min(len(gt_objects), len(pred_objects))
-	disputed_pred_indices: list[int] = []
+	# 对应位置上存在争议的索引，例如第 i 个人工框和第 i 个预测框 IoU < 阈值。
+	disputed_pair_indices: list[int] = []
 	has_low_iou_pair = False
 
 	for idx in range(min_len):
@@ -168,14 +169,51 @@ def evaluate_disputes_by_index(
 		iou = box_iou(gt_obj, pred_obj)
 		if iou < iou_threshold:
 			has_low_iou_pair = True
-			disputed_pred_indices.append(idx)
+			disputed_pair_indices.append(idx)
 
-	# 数量不一致也属于争议，超出对应范围的预测标签都算争议预测标签
-	if len(pred_objects) > min_len:
-		disputed_pred_indices.extend(range(min_len, len(pred_objects)))
+	# 人工标注比 AI 预测更多出来的那部分索引，这些框没有找到对应预测框。
+	extra_gt_indices = list(range(min_len, len(gt_objects)))
+	# AI 预测比人工标注更多出来的那部分索引，这些框没有找到对应人工框。
+	extra_pred_indices = list(range(min_len, len(pred_objects)))
 
-	has_dispute = (len(gt_objects) != len(pred_objects)) or has_low_iou_pair
-	return has_dispute, disputed_pred_indices
+	has_dispute = bool(disputed_pair_indices or extra_gt_indices or extra_pred_indices or has_low_iou_pair)
+	return has_dispute, disputed_pair_indices, extra_gt_indices, extra_pred_indices
+
+
+def build_merged_lines(
+	gt_objects: list[YoloObject],
+	pred_objects: list[YoloObject],
+	disputed_pair_indices: list[int],
+	extra_gt_indices: list[int],
+	extra_pred_indices: list[int],
+	human_id_map: dict[int, int],
+	ai_id_map: dict[int, int],
+) -> tuple[list[str], int]:
+	"""仅对争议标签改写 class_id，其余标签保持人工标注原样。"""
+	# disputed_pair_indices: 一一对应后判定有冲突的成对标签索引。
+	disputed_pair_index_set = set(disputed_pair_indices)
+	# extra_gt_indices: 人工侧多出来的标签索引，也视为争议，需要改成 *_human 的 class_id。
+	extra_gt_index_set = set(extra_gt_indices)
+	merged_lines: list[str] = []
+
+	for idx, gt_obj in enumerate(gt_objects):
+		if idx in disputed_pair_index_set or idx in extra_gt_index_set:
+			merged_lines.append(format_with_new_class_id(gt_obj, human_id_map[gt_obj.cls_id]))
+		else:
+			merged_lines.append(gt_obj.raw_line)
+
+	for idx in disputed_pair_indices:
+		# 对每个争议配对，除了保留对应的人工标签，还要补一条 *_AI 标签。
+		pred_obj = pred_objects[idx]
+		merged_lines.append(format_with_new_class_id(pred_obj, ai_id_map[pred_obj.cls_id]))
+
+	for idx in extra_pred_indices:
+		# 预测侧多出来的标签没有对应人工框，直接作为争议 AI 标签补入。
+		pred_obj = pred_objects[idx]
+		merged_lines.append(format_with_new_class_id(pred_obj, ai_id_map[pred_obj.cls_id]))
+
+	disputed_pred_count = len(disputed_pair_indices) + len(extra_pred_indices)
+	return merged_lines, disputed_pred_count
 
 
 def iter_label_stems(gt_dir: Path, pred_dir: Path) -> list[str]:
@@ -234,7 +272,7 @@ def merge_labels(
 		stats.gt_objects += len(gt_objects)
 		stats.pred_objects += len(pred_objects)
 
-		has_dispute, disputed_pred_indices = evaluate_disputes_by_index(
+		has_dispute, disputed_pair_indices, extra_gt_indices, extra_pred_indices = evaluate_disputes_by_index(
 			gt_objects=gt_objects,
 			pred_objects=pred_objects,
 			iou_threshold=iou_threshold,
@@ -242,14 +280,16 @@ def merge_labels(
 
 		if has_dispute:
 			stats.files_with_disputes += 1
-			disputed_preds = [pred_objects[i] for i in disputed_pred_indices]
-			stats.disputed_pred_objects += len(disputed_preds)
-
-			merged_lines = [
-				format_with_new_class_id(obj, human_id_map[obj.cls_id]) for obj in gt_objects
-			] + [
-				format_with_new_class_id(obj, ai_id_map[obj.cls_id]) for obj in disputed_preds
-			]
+			merged_lines, disputed_pred_count = build_merged_lines(
+				gt_objects=gt_objects,
+				pred_objects=pred_objects,
+				disputed_pair_indices=disputed_pair_indices,
+				extra_gt_indices=extra_gt_indices,
+				extra_pred_indices=extra_pred_indices,
+				human_id_map=human_id_map,
+				ai_id_map=ai_id_map,
+			)
+			stats.disputed_pred_objects += disputed_pred_count
 
 			# 仅争议样本输出融合标签
 			out_label_path = labels_out_dir / f"{stem}.txt"
