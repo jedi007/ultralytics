@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterable
 
 from ultralytics import YOLO
+from ultralytics.utils import TQDM
 
 
 # =========================
@@ -102,7 +103,7 @@ class YoloLabelExporter:
 		if not images:
 			return stats
 
-		for image_path in images:
+		for image_path in TQDM(images, total=len(images), desc="推理进度", unit="张"):
 			label_path = output_dir / f"{image_path.stem}.txt"
 			try:
 				results = self.model.predict(
