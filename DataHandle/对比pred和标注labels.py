@@ -25,9 +25,9 @@ from ultralytics import YOLO
 # =========================
 MODEL_PATH = "det_smog_fire_250811.pt"
 PRED_LABEL_DIR = "runs/det_smog_fire/pred_labels"
-GT_LABEL_DIR = "/data/CVAT标注/烟火数据集/det_smog_fire_250718_去重加上淘宝数据筛选/det_smog_fire/val/labels"  # 例如数据集中的 labels 目录
-SOURCE_IMAGE_DIR = "/data/CVAT标注/烟火数据集/det_smog_fire_250718_去重加上淘宝数据筛选/det_smog_fire/val/images"
-OUTPUT_MERGED_DIR = "/data/清洗cache/yanhuomerge"
+GT_LABEL_DIR = "/data/CVAT_data/烟火数据集/det_smog_fire_250718_去重加上淘宝数据筛选/det_smog_fire/train/labels"  # 例如数据集中的 labels 目录
+SOURCE_IMAGE_DIR = "/data/CVAT_data/烟火数据集/det_smog_fire_250718_去重加上淘宝数据筛选/det_smog_fire/train/images"
+OUTPUT_MERGED_DIR = "/data/清洗cache/smog_fire_merged_train"
 CLEAR_OUTPUT_SUBDIRS_BEFORE_RUN = True
 
 # 仅当预测框与标注框类别相同且 IoU >= 阈值时，判定为一致

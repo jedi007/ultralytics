@@ -12,13 +12,13 @@ from ultralytics.utils import TQDM
 # Config (edit as needed)
 # =========================
 MODEL_PATH = "det_smog_fire_250811.pt"
-INPUT_DIR = "/data/CVAT标注/烟火数据集/det_smog_fire_250718_去重加上淘宝数据筛选/det_smog_fire/val/images"
-OUTPUT_LABEL_DIR = "runs/det_smog_fire/pred_labels"
+INPUT_DIR = "/data/清洗cache/caiji/images"
+OUTPUT_LABEL_DIR = "/data/清洗cache/caiji/pred_labels"
 # None means auto: save to OUTPUT_LABEL_DIR parent directory as classes.txt
-CLASSES_TXT_PATH = "runs/det_smog_fire/classes.txt"
+CLASSES_TXT_PATH = "/data/清洗cache/caiji/classes.txt"
 CONF = 0.25
 IOU = 0.45
-IMGSZ = 640
+IMGSZ = [384, 640]
 DEVICE = None
 
 
@@ -92,7 +92,7 @@ class YoloLabelExporter:
 		output_label_dir: str | Path,
 		conf: float = 0.25,
 		iou: float = 0.45,
-		imgsz: int = 640,
+		imgsz: list[int] = [384, 640],
 		device: str | None = None,
 	) -> InferenceStats:
 		images = list(self._iter_images(input_dir))
