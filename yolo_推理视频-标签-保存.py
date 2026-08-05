@@ -12,20 +12,26 @@ from ultralytics.utils import TQDM
 # =========================
 # Config (edit as needed)
 # =========================
-MODEL_PATH = "det_smog_fire_250811.pt"
-VIDEO_PATH = "/data/清洗cache/caiji/smoke_fire_1b1b6b2c69d959d5478c49e9bcdf8ad8.mp4"
+MODEL_PATH = "pose_instrument_m20260602_2.pt"
+VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record-2.mp4"
 OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred"
 OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames"
 OUTPUT_PRED_DIR = f"{OUTPUT_ROOT_DIR}/pred_frames"
 OUTPUT_LABEL_DIR = f"{OUTPUT_ROOT_DIR}/labels"
 # None means auto: save to OUTPUT_ROOT_DIR/classes.txt
 CLASSES_TXT_PATH = None
-CONF = 0.75
+CONF = 0.05
 IOU = 0.45
 IMGSZ = [384, 640]
 DEVICE = None
 FRAME_NAME_TEMPLATE = "frame_{frame_index:06d}"
 SAVE_EMPTY_LABEL = True
+
+# 新增保存模式开关
+# 1: 只有检测到目标才保存
+# 2: 只有未检测到目标才保存
+# 3: 全部帧都保存（原始逻辑）
+SAVE_MODE = 1
 
 
 @dataclass
@@ -95,6 +101,7 @@ class VideoFrameLabelExporter:
 		imgsz: list[int] = [384, 640],
 		device: str | None = None,
 		save_empty_label: bool = True,
+		save_mode: int = 3,
 	) -> InferenceStats:
 		video_file = Path(video_path)
 		if not video_file.exists() or not video_file.is_file():
@@ -133,9 +140,7 @@ class VideoFrameLabelExporter:
 				label_path = label_dir / f"{frame_stem}.txt"
 
 				try:
-					if not cv2.imwrite(str(frame_path), frame):
-						raise RuntimeError(f"原始帧保存失败: {frame_path}")
-
+					# 先推理获取检测结果
 					results = self.model.predict(
 						source=frame,
 						conf=conf,
@@ -145,12 +150,29 @@ class VideoFrameLabelExporter:
 						verbose=False,
 					)
 					result = results[0]
+					has_object = result.boxes is not None and len(result.boxes) > 0
 
-					stats.total_boxes += self._write_yolo_label(label_path, result, save_empty_label=save_empty_label)
+					# 根据保存模式判断是否跳过保存
+					skip_save = False
+					if save_mode == 1 and not has_object:
+						skip_save = True
+					elif save_mode == 2 and has_object:
+						skip_save = True
 
-					annotated_frame = result.plot()
-					if not cv2.imwrite(str(pred_path), annotated_frame):
-						raise RuntimeError(f"推理结果图保存失败: {pred_path}")
+					if not skip_save:
+						# 保存原图
+						if not cv2.imwrite(str(frame_path), frame):
+							raise RuntimeError(f"原始帧保存失败: {frame_path}")
+						# 写入标签
+						box_cnt = self._write_yolo_label(label_path, result, save_empty_label=save_empty_label)
+						stats.total_boxes += box_cnt
+						# 保存渲染效果图
+						annotated_frame = result.plot()
+						if not cv2.imwrite(str(pred_path), annotated_frame):
+							raise RuntimeError(f"推理结果图保存失败: {pred_path}")
+					else:
+						# 跳过保存，标签也不生成
+						pass
 
 					stats.success_frames += 1
 				except Exception as exc:  # noqa: BLE001
@@ -186,6 +208,7 @@ def main() -> None:
 		imgsz=IMGSZ,
 		device=DEVICE,
 		save_empty_label=SAVE_EMPTY_LABEL,
+		save_mode=SAVE_MODE,  # 传入保存模式
 	)
 
 	print(f"总帧数: {stats.total_frames}")
@@ -195,6 +218,8 @@ def main() -> None:
 	print(f"原始帧目录: {Path(OUTPUT_FRAME_DIR)}")
 	print(f"推理结果图目录: {Path(OUTPUT_PRED_DIR)}")
 	print(f"标签目录: {Path(OUTPUT_LABEL_DIR)}")
+	mode_desc = {1: "仅保存有目标帧", 2: "仅保存空帧", 3: "保存全部帧"}
+	print(f"当前保存模式: {SAVE_MODE} - {mode_desc[SAVE_MODE]}")
 
 
 if __name__ == "__main__":
