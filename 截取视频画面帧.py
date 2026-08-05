@@ -9,11 +9,10 @@ from ultralytics.utils import TQDM
 # =========================
 VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-05-16-10-55.mp4"
 OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred2"
-OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames_cut"
-FRAME_NAME_TEMPLATE = "frame_{frame_index:06d}.jpg"
+OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames"
 
 # 截取控制参数
-start_index = 50000    # 从第几帧开始处理
+start_index = 100    # 从第几帧开始处理
 frames_count = 100   # 需要保存的图片总数量
 
 # 画面相似度过滤配置
@@ -34,6 +33,9 @@ def calc_gray_hist(frame: np.ndarray, w: int, h: int) -> np.ndarray:
     return hist
 
 def main():
+    # 提取视频文件名（不带后缀）
+    video_file = Path(VIDEO_PATH)
+    video_stem = video_file.stem
     # 创建输出文件夹
     save_dir = Path(OUTPUT_FRAME_DIR)
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -77,7 +79,8 @@ def main():
 
             # 画面发生变化，更新参考直方图 + 保存图片
             ref_hist = curr_hist
-            save_name = FRAME_NAME_TEMPLATE.format(frame_index=current_frame_idx)
+            # 文件名格式：视频文件名_帧序号.jpg
+            save_name = f"{video_stem}_{current_frame_idx:06d}.jpg"
             save_path = save_dir / save_name
             cv2.imwrite(str(save_path), frame)
             saved_num += 1
