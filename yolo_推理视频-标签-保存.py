@@ -14,8 +14,8 @@ from ultralytics.utils import TQDM
 # Config (edit as needed)
 # =========================
 MODEL_PATH = "pose_instrument_m20260602_2.pt"
-VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-05-16-10-55.mp4"
-OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred2"
+VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-05-11-38-10.mp4"
+OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred4"
 OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames"
 OUTPUT_PRED_DIR = f"{OUTPUT_ROOT_DIR}/pred_frames"
 OUTPUT_LABEL_DIR = f"{OUTPUT_ROOT_DIR}/labels"
@@ -25,7 +25,6 @@ CONF = 0.05
 IOU = 0.45
 IMGSZ = [384, 640]
 DEVICE = None
-FRAME_NAME_TEMPLATE = "frame_{frame_index:06d}"
 SAVE_EMPTY_LABEL = True
 
 # 原有保存模式开关
@@ -53,11 +52,12 @@ class InferenceStats:
 class VideoFrameLabelExporter:
     """Run inference on each video frame and save images plus YOLO-format labels."""
 
-    def __init__(self, model_path: str | Path = "det_person_helmet_250821.pt") -> None:
+    def __init__(self, model_path: str | Path = "det_person_helmet_250821.pt", video_file_stem: str = "") -> None:
         self.model_path = Path(model_path)
         if not self.model_path.exists():
             raise FileNotFoundError(f"模型文件不存在: {self.model_path}")
         self.model = YOLO(str(self.model_path))
+        self.video_stem = video_file_stem  # 视频文件名前缀
         # 缓存参考帧直方图，用于相似度对比
         self.ref_frame_hist = None
 
@@ -76,9 +76,9 @@ class VideoFrameLabelExporter:
         classes_path.write_text("\n".join(class_names) + "\n", encoding="utf-8")
         return classes_path
 
-    @staticmethod
-    def _frame_stem(frame_index: int) -> str:
-        return FRAME_NAME_TEMPLATE.format(frame_index=frame_index)
+    def _get_file_prefix(self, frame_index: int) -> str:
+        """生成文件名前缀：视频名_000001"""
+        return f"{self.video_stem}_{frame_index:06d}"
 
     @staticmethod
     def _write_yolo_label(label_file: Path, result, save_empty_label: bool = True) -> int:
@@ -158,10 +158,10 @@ class VideoFrameLabelExporter:
                     break
 
                 frame_index += 1
-                frame_stem = self._frame_stem(frame_index)
-                frame_path = frame_dir / f"{frame_stem}.jpg"
-                pred_path = pred_dir / f"{frame_stem}.jpg"
-                label_path = label_dir / f"{frame_stem}.txt"
+                file_prefix = self._get_file_prefix(frame_index)
+                frame_path = frame_dir / f"{file_prefix}.jpg"
+                pred_path = pred_dir / f"{file_prefix}.jpg"
+                label_path = label_dir / f"{file_prefix}.txt"
 
                 # 1. 画面相似度判断逻辑
                 curr_hist = self.calc_frame_hist(frame, sim_resize_w, sim_resize_h)
@@ -228,7 +228,11 @@ class VideoFrameLabelExporter:
 
 
 def main() -> None:
-    exporter = VideoFrameLabelExporter(model_path=MODEL_PATH)
+    # 提取视频文件名（不带后缀）
+    video_path_obj = Path(VIDEO_PATH)
+    video_name_stem = video_path_obj.stem
+    exporter = VideoFrameLabelExporter(model_path=MODEL_PATH, video_file_stem=video_name_stem)
+
     classes_txt_path = Path(CLASSES_TXT_PATH) if CLASSES_TXT_PATH else Path(OUTPUT_ROOT_DIR) / "classes.txt"
     exporter.export_classes_txt(classes_txt_path)
     print(f"类别文件已保存: {classes_txt_path}")

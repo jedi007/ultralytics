@@ -7,13 +7,13 @@ from ultralytics.utils import TQDM
 # =========================
 # 宏定义配置区（直接修改）
 # =========================
-VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-05-16-10-55.mp4"
+VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-05-10-08-02.mp4"
 OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred2"
 OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames"
 
 # 截取控制参数
-start_index = 100    # 从第几帧开始处理
-frames_count = 100   # 需要保存的图片总数量
+start_index = 0    # 从第几帧开始处理
+frames_count = 100000   # 需要保存的图片总数量
 
 # 画面相似度过滤配置
 FRAME_SIMILARITY_THRESHOLD = 0.95
