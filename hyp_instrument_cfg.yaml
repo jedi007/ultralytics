@@ -15,7 +15,7 @@ patience: 100 # (int) early stop after N epochs without val improvement
 batch: 8 # (int | float) batch size as int (e.g. 16), or float 0.0–1.0 for AutoBatch fraction of GPU memory
 imgsz: [384, 640] # (int | list) train/val use int (square); predict/export may use [h,w]
 save: True # (bool) save train checkpoints and predict results
-save_period: -1 # (int) save checkpoint every N epochs; disabled if < 1
+save_period: 1 # (int) save checkpoint every N epochs; disabled if < 1
 cache: False # (bool | str) cache images in RAM (True/'ram') or on 'disk' to speed dataloading; False disables
 device: # (int | str | list) device: 0 or [0,1,2,3] for CUDA, 'cpu'/'mps', or -1/[-1,-1] to auto-select idle GPUs
 workers: 4 # (int) dataloader workers (per RANK if DDP)
@@ -115,7 +115,7 @@ degrees: 8.0 # (float) rotation degrees (+/-)
 translate: 0.1 # (float) translation fraction (+/-)
 scale: 0.5 # (float) scale gain (+/-)
 shear: 0.0 # (float) shear degrees (+/-)
-perspective: 0.0 # (float) perspective fraction (0–0.001 typical)
+perspective: 0.0005 # (float) perspective fraction (0–0.001 typical)
 flipud: 0.0 # (float) vertical flip probability
 fliplr: 0.5 # (float) horizontal flip probability
 bgr: 0.0 # (float) RGB↔BGR channel swap probability

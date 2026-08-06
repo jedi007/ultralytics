@@ -7,13 +7,14 @@ from ultralytics.utils import TQDM
 # =========================
 # 宏定义配置区（直接修改）
 # =========================
-VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-05-11-38-10.mp4"
-OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred4"
+VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-04-19-32-04.mp4"
+OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred5"
 OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames_cut"
 
 # 截取控制参数
-start_index = 4000    # 从第几帧开始处理
-frames_count = 3700   # 需要保存的图片总数量
+start_index = 0    # 起始帧序号（从该帧开始处理）
+frames_count = 2000   # 从起始帧往后，总共处理3700帧的区间，到 start_index+frames_count 截止
+end_index = start_index + frames_count  # 自动计算结束帧
 
 # 画面相似度过滤配置
 FRAME_SIMILARITY_THRESHOLD = 0.95
@@ -61,12 +62,11 @@ def main():
             total_scan += 1
             pbar.update(1)
 
-            # 1. 跳过起始帧之前的所有画面
+            # 条件1：小于起始帧，直接跳过
             if current_frame_idx < start_index:
                 continue
-
-            # 2. 达到目标保存数量，直接退出
-            if saved_num >= frames_count:
+            # 条件2：超出区间结束帧，直接终止整个程序
+            if current_frame_idx > end_index:
                 break
 
             # 3. 相似度判断
@@ -92,11 +92,11 @@ def main():
     # 打印统计信息
     print("=" * 55)
     print(f"视频路径: {VIDEO_PATH}")
-    print(f"起始截取帧: {start_index} | 目标保存数: {frames_count}")
+    print(f"帧区间范围：{start_index} ~ {end_index}（区间总帧数：{frames_count}）")
     print(f"相似度阈值: {FRAME_SIMILARITY_THRESHOLD}")
     print(f"总共扫描帧数: {total_scan}")
-    print(f"相似重复帧跳过: {skip_similar}")
-    print(f"实际保存图片数量: {saved_num}")
+    print(f"区间内相似重复帧跳过: {skip_similar}")
+    print(f"区间内实际保存图片数量: {saved_num}")
     print(f"图片保存目录: {save_dir.resolve()}")
     print("=" * 55)
 

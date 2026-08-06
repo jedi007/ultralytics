@@ -14,8 +14,8 @@ from ultralytics.utils import TQDM
 # Config (edit as needed)
 # =========================
 MODEL_PATH = "pose_instrument_m20260602_2.pt"
-VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-05-11-38-10.mp4"
-OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred4"
+VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record-1.mp4"
+OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred9"
 OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames"
 OUTPUT_PRED_DIR = f"{OUTPUT_ROOT_DIR}/pred_frames"
 OUTPUT_LABEL_DIR = f"{OUTPUT_ROOT_DIR}/labels"
