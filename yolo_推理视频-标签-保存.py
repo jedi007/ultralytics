@@ -13,15 +13,15 @@ from ultralytics.utils import TQDM
 # =========================
 # Config (edit as needed)
 # =========================
-MODEL_PATH = "pose_instrument_m20260602_2.pt"
-VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record-1.mp4"
-OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred9"
+MODEL_PATH = "weights/det_instrument_20260806.pt"
+VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-06-15-20-16.mp4"
+OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred5"
 OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames"
 OUTPUT_PRED_DIR = f"{OUTPUT_ROOT_DIR}/pred_frames"
 OUTPUT_LABEL_DIR = f"{OUTPUT_ROOT_DIR}/labels"
 # None means auto: save to OUTPUT_ROOT_DIR/classes.txt
 CLASSES_TXT_PATH = None
-CONF = 0.05
+CONF = 0.55
 IOU = 0.45
 IMGSZ = [384, 640]
 DEVICE = None
@@ -31,7 +31,7 @@ SAVE_EMPTY_LABEL = True
 # 1: 只有检测到目标才保存
 # 2: 只有未检测到目标才保存
 # 3: 全部帧都保存（原始逻辑）
-SAVE_MODE = 1
+SAVE_MODE = 2
 
 # 新增画面相似度配置
 FRAME_SIMILARITY_THRESHOLD = 0.95  # 相似度阈值，大于该值判定为画面重复跳过推理

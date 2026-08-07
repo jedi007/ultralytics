@@ -16,16 +16,17 @@ from ultralytics import YOLO
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 PACKAGE_NAME = 'geek_yolo26_det'
-DEFAULT_RTSP_URL = 'rtsp://admin:sshw1234@192.168.5.145:554/cam/realmonitor?channel=1&subtype=0'
+DEFAULT_RTSP_URL = 'rtsp://admin:sshw1234@10.42.0.30:554/cam/realmonitor?channel=1&subtype=0'
 # DEFAULT_WEIGHT_FILE_NAME = 'det_person_helmet_250821.pt'
-DEFAULT_WEIGHT_FILE_NAME = 'det_instrument_20260430.pt'
+DEFAULT_WEIGHT_FILE_NAME = 'weights/det_instrument_20260806.pt'
 WINDOW_NAME = 'RTSP YOLO Real-time Detection'
 LABEL_TRANSLATIONS = {
 	'personup': '人',
 	'nohelmet': '未戴安全帽',
 	'helmet': '戴安全帽',
-	'instrument': '仪表1',
- 	'instrument_digital': '仪表2',
+	'instrument': '指针仪表',
+ 	'instrument_digital': '数显仪表',
+    'instrument_led': '指示灯仪表',
 }
 LABEL_COLORS = {
 	'personup': (0, 200, 0),
@@ -33,6 +34,7 @@ LABEL_COLORS = {
 	'nohelmet': (0, 0, 255),
 	'instrument': (180, 90, 0),
 	'instrument_digital': (90, 180, 0),
+	'instrument_led': (90, 180, 0),
 }
 DEFAULT_WINDOW_MAX_WIDTH = 1280
 DEFAULT_WINDOW_MAX_HEIGHT = 720
@@ -40,7 +42,7 @@ DEFAULT_PTZ_PORT = 37777
 DEFAULT_PTZ_CHANNEL = 0
 DEFAULT_PTZ_SPEED = 8
 DEFAULT_CONFIDENCE = 0.55
-DEFAULT_CENTER_DEADZONE = 100
+DEFAULT_CENTER_DEADZONE = 10000
 DEFAULT_TARGET_LOST_TIMEOUT = 0.8
 DEFAULT_PTZ_PULSE_DURATION = 0.5
 
