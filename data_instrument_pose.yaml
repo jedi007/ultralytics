@@ -26,7 +26,7 @@ names:
 kpt_names:
   0:
     - center
-    - current_value
+    - pointer
     - min_value
     - max_value
     - midel_value
