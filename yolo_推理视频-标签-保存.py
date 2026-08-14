@@ -14,14 +14,14 @@ from ultralytics.utils import TQDM
 # Config (edit as needed)
 # =========================
 MODEL_PATH = "weights/det_instrument_20260807.pt"
-VIDEO_PATH = "/data/清洗cache/video/26-08-14/rtsp_record_2026-08-14-10-12-07.mp4"
-OUTPUT_ROOT_DIR = "/data/清洗cache/video/26-08-14/video_pred"
+VIDEO_PATH = "/data/清洗cache/video/26-08-14/rtsp_record_2026-08-14-11-15-01.mp4"
+OUTPUT_ROOT_DIR = "/data/清洗cache/video/26-08-14/video_pred8"
 OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames"
 OUTPUT_PRED_DIR = f"{OUTPUT_ROOT_DIR}/pred_frames"
 OUTPUT_LABEL_DIR = f"{OUTPUT_ROOT_DIR}/labels"
 # None means auto: save to OUTPUT_ROOT_DIR/classes.txt
 CLASSES_TXT_PATH = None
-CONF = 0.55
+CONF = 0.88
 IOU = 0.45
 IMGSZ = [384, 640]
 DEVICE = None
@@ -34,7 +34,7 @@ SAVE_EMPTY_LABEL = True
 SAVE_MODE = 2
 
 # 新增画面相似度配置
-FRAME_SIMILARITY_THRESHOLD = 0.95  # 相似度阈值，大于该值判定为画面重复跳过推理
+FRAME_SIMILARITY_THRESHOLD = 0.96  # 相似度阈值，大于该值判定为画面重复跳过推理
 HIST_COMPARE_METHOD = cv2.HISTCMP_CORREL  # 直方图对比算法
 RESIZE_SIMILARITY_W = 640
 RESIZE_SIMILARITY_H = 384  # 缩小图做相似度计算，降低算力消耗
