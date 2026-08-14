@@ -13,9 +13,9 @@ from ultralytics.utils import TQDM
 # =========================
 # Config (edit as needed)
 # =========================
-MODEL_PATH = "weights/det_instrument_20260806.pt"
-VIDEO_PATH = "/home/robot/github/test_code/JKGN/大华/save_videos/rtsp_record_2026-08-06-15-20-16.mp4"
-OUTPUT_ROOT_DIR = "/data/清洗cache/caiji/video_pred5"
+MODEL_PATH = "weights/det_instrument_20260807.pt"
+VIDEO_PATH = "/data/清洗cache/video/26-08-14/rtsp_record_2026-08-14-10-12-07.mp4"
+OUTPUT_ROOT_DIR = "/data/清洗cache/video/26-08-14/video_pred"
 OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames"
 OUTPUT_PRED_DIR = f"{OUTPUT_ROOT_DIR}/pred_frames"
 OUTPUT_LABEL_DIR = f"{OUTPUT_ROOT_DIR}/labels"
@@ -159,7 +159,7 @@ class VideoFrameLabelExporter:
 
                 frame_index += 1
                 file_prefix = self._get_file_prefix(frame_index)
-                frame_path = frame_dir / f"{file_prefix}.jpg"
+                frame_path = frame_dir / f"{file_prefix}.bmp"
                 pred_path = pred_dir / f"{file_prefix}.jpg"
                 label_path = label_dir / f"{file_prefix}.txt"
 
