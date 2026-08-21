@@ -18,7 +18,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 PACKAGE_NAME = 'geek_yolo26_det'
 DEFAULT_RTSP_URL = 'rtsp://admin:sshw1234@10.42.0.30:554/cam/realmonitor?channel=1&subtype=0'
 # DEFAULT_WEIGHT_FILE_NAME = 'det_person_helmet_250821.pt'
-DEFAULT_WEIGHT_FILE_NAME = 'weights/det_instrument_20260806.pt'
+DEFAULT_WEIGHT_FILE_NAME = 'weights/det_instrument_20260817.pt'
 WINDOW_NAME = 'RTSP YOLO Real-time Detection'
 LABEL_TRANSLATIONS = {
 	'personup': '人',
