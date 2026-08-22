@@ -5,7 +5,7 @@ import torch
 PRETRAINED_WEIGHTS = "yolo26m-pose.pt"  # 预训练权重
 DATA_CONFIG = "data_instrument_pose.yaml"    # 数据集配置
 HYP_CONFIG = "hyp_instrument_pose_cfg.yaml"   # 超参数配置
-EPOCHS = 200                                  # 训练轮数
+EPOCHS = 80                                  # 训练轮数
 BATCH_SIZE = 64                                # 批次大小
 IMAGE_SIZE = 512                              # 输入尺寸（训练/导出统一）
 DEVICE = 0 if torch.cuda.is_available() else "cpu"  # 自动判断GPU/CPU

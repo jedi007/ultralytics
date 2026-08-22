@@ -9,25 +9,29 @@
 #     └── coco8-pose ← downloads here (1 MB)
 
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-path: /data/train_data/指针仪表读数 # dataset root dir
+path: /data/train_data/指针仪表读数/8关键点版/20260819 # dataset root dir
 train: train # train images (relative to 'path') 4 images
 val: train # val images (relative to 'path') 4 images
 test: # test images (optional)
 
 # Keypoints
-kpt_shape: [5, 3] # number of keypoints, number of dims (2 for x,y or 3 for x,y,visible)
-flip_idx: [0, 1, 2, 3, 4]
+kpt_shape: [8, 3] # number of keypoints, number of dims (2 for x,y or 3 for x,y,visible)
+flip_idx: [0, 1, 2, 3, 4, 5, 6, 7]
 
 # Classes
 names:
-  0: instrument
+  0: instrument_pointer
 
 # Keypoint names per class
 kpt_names:
   0:
     - center
     - pointer
-    - min_value
-    - max_value
-    - midel_value
+    - value_0
+    - value_20
+    - value_40
+    - value_60
+    - value_80
+    - value_100
+
 
