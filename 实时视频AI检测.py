@@ -15,7 +15,7 @@ from ultralytics.utils import TQDM
 # Config (edit as needed)
 # =========================
 MODEL_PATH = "weights/det_instrument_20260817.pt"
-VIDEO_PATH = "/data/清洗cache/video/26-08-14/已处理/rtsp_record_2026-08-14-10-02-10.mp4"
+VIDEO_PATH = "/data/清洗cache/video/26-08-14/已处理/rtsp_record_2026-08-14-11-02-19.mp4"
 CONF = 0.55
 IOU = 0.45
 IMGSZ = [384, 640]
@@ -26,7 +26,7 @@ DISPLAY_SCALE = 1.0  # 显示窗口相对原图的缩放比例
 MAX_DISPLAY_FPS = 50.0  # 显示帧率上限，避免播放过快
 
 
-POSE_MODE_PATH = "weights/pose_instrument_m_260821.pt"
+POSE_MODE_PATH = "weights/pose_instrument_m_260821_2.pt"
 pose_cls_names = ["instrument"]
 READING_KPT_CONF = 0.2
 
