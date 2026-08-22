@@ -13,8 +13,8 @@ from ultralytics.utils import TQDM
 # =========================
 # Config (edit as needed)
 # =========================
-MODEL_PATH = "weights/det_instrument_20260806.pt"
-VIDEO_PATH = "/data/清洗cache/已处理video/拍摄仪表/rtsp_record_2026-08-06-15-20-16.mp4"
+MODEL_PATH = "weights/det_instrument_20260817.pt"
+VIDEO_PATH = "/data/清洗cache/video/26-08-14/已处理/rtsp_record_2026-08-14-10-55-37.mp4"
 CONF = 0.55
 IOU = 0.45
 IMGSZ = [384, 640]
@@ -23,6 +23,117 @@ WINDOW_NAME = "YOLO Real-time Detection"
 QUIT_KEY = "q"  # 按 q 退出
 DISPLAY_SCALE = 1.0  # 显示窗口相对原图的缩放比例
 MAX_DISPLAY_FPS = 50.0  # 显示帧率上限，避免播放过快
+
+
+POSE_MODE_PATH = "weights/pose_instrument_m_260821.pt"
+pose_cls_names = ["instrument"]
+
+
+@dataclass
+class PosePoint:
+    x: int
+    y: int
+    conf: float = 1.0
+
+
+class SecondaryPoseDetector:
+    """Run pose estimation on cropped regions and map keypoints back to full frame."""
+
+    def __init__(self, model_path: str | Path, target_names: list[str]) -> None:
+        self.model_path = Path(model_path)
+        if not self.model_path.exists():
+            raise FileNotFoundError(f"关键点模型文件不存在: {self.model_path}")
+        self.model = YOLO(str(self.model_path))
+        self.target_names = set(target_names)
+
+    @staticmethod
+    def _clip_box(box: list[float], width: int, height: int) -> tuple[int, int, int, int] | None:
+        x1, y1, x2, y2 = box
+        x1_i = max(0, min(int(x1), width - 1))
+        y1_i = max(0, min(int(y1), height - 1))
+        x2_i = max(0, min(int(x2), width))
+        y2_i = max(0, min(int(y2), height))
+        if x2_i <= x1_i or y2_i <= y1_i:
+            return None
+        return x1_i, y1_i, x2_i, y2_i
+
+    @staticmethod
+    def _resolve_name(names: dict[int, str] | list[str], cls_id: int) -> str:
+        if isinstance(names, dict):
+            return str(names.get(cls_id, cls_id))
+        if 0 <= cls_id < len(names):
+            return str(names[cls_id])
+        return str(cls_id)
+
+    def run_on_frame(
+        self,
+        frame,
+        det_result,
+        conf: float = 0.25,
+        iou: float = 0.45,
+    ) -> list[list[PosePoint]]:
+        if det_result.boxes is None or len(det_result.boxes) == 0:
+            return []
+
+        h, w = frame.shape[:2]
+        mapped_keypoints: list[list[PosePoint]] = []
+
+        boxes_xyxy = det_result.boxes.xyxy.tolist()
+        cls_ids = det_result.boxes.cls.tolist()
+
+        for box_xyxy, cls_id in zip(boxes_xyxy, cls_ids):
+            cls_name = self._resolve_name(det_result.names, int(cls_id))
+            if cls_name not in self.target_names:
+                continue
+
+            clipped = self._clip_box(box_xyxy, w, h)
+            if clipped is None:
+                continue
+            x1, y1, x2, y2 = clipped
+
+            crop = frame[y1:y2, x1:x2]
+            if crop.size == 0:
+                continue
+
+            pose_results = self.model.predict(
+                source=crop,
+                conf=conf,
+                iou=iou,
+                verbose=False,
+            )
+            if not pose_results:
+                continue
+            pose_result = pose_results[0]
+            if pose_result.keypoints is None or pose_result.keypoints.xy is None:
+                continue
+            if len(pose_result.keypoints.xy) == 0:
+                continue
+
+            # 取第一条姿态结果并映射回原图坐标
+            pose_xy = pose_result.keypoints.xy[0].tolist()
+
+            points: list[PosePoint] = []
+            point_confs = None
+            if pose_result.keypoints.conf is not None and len(pose_result.keypoints.conf) > 0:
+                point_confs = pose_result.keypoints.conf[0].tolist()
+
+            for idx, (px, py) in enumerate(pose_xy):
+                conf_v = 1.0
+                if point_confs is not None and idx < len(point_confs):
+                    conf_v = float(point_confs[idx])
+                points.append(PosePoint(x=int(px + x1), y=int(py + y1), conf=conf_v))
+
+            mapped_keypoints.append(points)
+
+        return mapped_keypoints
+
+    @staticmethod
+    def draw_keypoints(frame, all_points: list[list[PosePoint]], conf_thr: float = 0.2) -> None:
+        for points in all_points:
+            for p in points:
+                if p.conf < conf_thr:
+                    continue
+                cv2.circle(frame, (p.x, p.y), 3, (0, 255, 255), -1)
 
 
 @dataclass
@@ -41,6 +152,11 @@ class RealTimeVideoDetector:
         if not self.model_path.exists():
             raise FileNotFoundError(f"模型文件不存在: {self.model_path}")
         self.model = YOLO(str(self.model_path))
+        self.pose_detector = SecondaryPoseDetector(
+            model_path=POSE_MODE_PATH,
+            target_names=pose_cls_names,
+        )
+
     def infer_stream(
         self,
         video_path: str,
@@ -96,6 +212,15 @@ class RealTimeVideoDetector:
 
                     # 在原图上绘制检测框并显示，不写入任何 label 或图片文件
                     annotated_frame = result.plot(img=frame.copy())
+
+                    # 二级关键点检测：仅对指定类别进行扣图并回填关键点到原图
+                    all_points = self.pose_detector.run_on_frame(
+                        frame=frame,
+                        det_result=result,
+                        conf=conf,
+                        iou=iou,
+                    )
+                    self.pose_detector.draw_keypoints(annotated_frame, all_points)
 
                     if not window_size_inited:
                         show_w = max(1, int(frame.shape[1] * max(display_scale, 0.1)))
