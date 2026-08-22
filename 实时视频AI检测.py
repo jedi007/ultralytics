@@ -15,7 +15,7 @@ from ultralytics.utils import TQDM
 # Config (edit as needed)
 # =========================
 MODEL_PATH = "weights/det_instrument_20260817.pt"
-VIDEO_PATH = "/data/清洗cache/video/26-08-14/已处理/rtsp_record_2026-08-14-10-55-37.mp4"
+VIDEO_PATH = "/data/清洗cache/video/26-08-14/已处理/rtsp_record_2026-08-14-10-02-10.mp4"
 CONF = 0.55
 IOU = 0.45
 IMGSZ = [384, 640]
@@ -176,11 +176,11 @@ class SecondaryPoseDetector:
                 cv2.putText(
                     frame,
                     text,
-                    (x1, max(30, y1 - 40)),
+                    (x1, max(30, y1 - 50)),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.9,
+                    1.1,
                     (0, 255, 255),
-                    3,
+                    4,
                     cv2.LINE_AA,
                 )
 
