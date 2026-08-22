@@ -6,6 +6,7 @@ import time
 
 import cv2
 
+from point_data_parser import DEFAULT_FRONT_VIEW_ANCHOR_POINTS, parse_readdata
 from ultralytics import YOLO
 from ultralytics.utils import TQDM
 
@@ -27,6 +28,7 @@ MAX_DISPLAY_FPS = 50.0  # 显示帧率上限，避免播放过快
 
 POSE_MODE_PATH = "weights/pose_instrument_m_260821.pt"
 pose_cls_names = ["instrument"]
+READING_KPT_CONF = 0.2
 
 
 @dataclass
@@ -34,6 +36,14 @@ class PosePoint:
     x: int
     y: int
     conf: float = 1.0
+
+
+@dataclass
+class PoseDetection:
+    cls_name: str
+    box: tuple[int, int, int, int]
+    points: list[PosePoint]
+    reading: float | None = None
 
 
 class SecondaryPoseDetector:
@@ -71,12 +81,12 @@ class SecondaryPoseDetector:
         det_result,
         conf: float = 0.25,
         iou: float = 0.45,
-    ) -> list[list[PosePoint]]:
+    ) -> list[PoseDetection]:
         if det_result.boxes is None or len(det_result.boxes) == 0:
             return []
 
         h, w = frame.shape[:2]
-        mapped_keypoints: list[list[PosePoint]] = []
+        mapped_results: list[PoseDetection] = []
 
         boxes_xyxy = det_result.boxes.xyxy.tolist()
         cls_ids = det_result.boxes.cls.tolist()
@@ -123,17 +133,56 @@ class SecondaryPoseDetector:
                     conf_v = float(point_confs[idx])
                 points.append(PosePoint(x=int(px + x1), y=int(py + y1), conf=conf_v))
 
-            mapped_keypoints.append(points)
+            reading = self._compute_reading(points)
+            mapped_results.append(
+                PoseDetection(
+                    cls_name=cls_name,
+                    box=(x1, y1, x2, y2),
+                    points=points,
+                    reading=reading,
+                )
+            )
 
-        return mapped_keypoints
+        return mapped_results
 
     @staticmethod
-    def draw_keypoints(frame, all_points: list[list[PosePoint]], conf_thr: float = 0.2) -> None:
-        for points in all_points:
-            for p in points:
+    def _compute_reading(points: list[PosePoint]) -> float | None:
+        expected_points = len(DEFAULT_FRONT_VIEW_ANCHOR_POINTS) + 1
+        if len(points) < expected_points:
+            return None
+
+        kpt_slice = points[:expected_points]
+        if any(point.conf < READING_KPT_CONF for point in kpt_slice):
+            return None
+
+        src_points = [(point.x, point.y, point.conf) for point in kpt_slice]
+        try:
+            reading, _, _, _ = parse_readdata(src_points)
+            return float(reading)
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    def draw_keypoints(frame, pose_detections: list[PoseDetection], conf_thr: float = 0.2) -> None:
+        for det in pose_detections:
+            for p in det.points:
                 if p.conf < conf_thr:
                     continue
                 cv2.circle(frame, (p.x, p.y), 3, (0, 255, 255), -1)
+
+            if det.reading is not None:
+                x1, y1, _, _ = det.box
+                text = f"reading: {det.reading:.2f}"
+                cv2.putText(
+                    frame,
+                    text,
+                    (x1, max(30, y1 - 40)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9,
+                    (0, 255, 255),
+                    3,
+                    cv2.LINE_AA,
+                )
 
 
 @dataclass
@@ -214,13 +263,13 @@ class RealTimeVideoDetector:
                     annotated_frame = result.plot(img=frame.copy())
 
                     # 二级关键点检测：仅对指定类别进行扣图并回填关键点到原图
-                    all_points = self.pose_detector.run_on_frame(
+                    pose_detections = self.pose_detector.run_on_frame(
                         frame=frame,
                         det_result=result,
                         conf=conf,
                         iou=iou,
                     )
-                    self.pose_detector.draw_keypoints(annotated_frame, all_points)
+                    self.pose_detector.draw_keypoints(annotated_frame, pose_detections)
 
                     if not window_size_inited:
                         show_w = max(1, int(frame.shape[1] * max(display_scale, 0.1)))
