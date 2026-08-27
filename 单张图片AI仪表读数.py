@@ -41,7 +41,7 @@ class PoseDetection:
     reading: float | None = None
 
 
-class PoseDetector:
+class SecondaryPoseDetector:
     """Run pose estimation on cropped regions and map keypoints back to full frame."""
 
     def __init__(self, model_path: str | Path, target_names: list[str]) -> None:
@@ -52,23 +52,42 @@ class PoseDetector:
         self.target_names = set(target_names)
 
     @staticmethod
-    def _clip_box(box, width, height):
+    def _clip_box(box: list[float], width: int, height: int) -> tuple[int, int, int, int] | None:
         x1, y1, x2, y2 = box
-        x1, y1 = max(0, int(x1)), max(0, int(y1))
-        x2, y2 = min(width, int(x2)), min(height, int(y2))
-        if x2 <= x1 or y2 <= y1:
+        x1_i = max(0, min(int(x1), width - 1))
+        y1_i = max(0, min(int(y1), height - 1))
+        x2_i = max(0, min(int(x2), width))
+        y2_i = max(0, min(int(y2), height))
+        if x2_i <= x1_i or y2_i <= y1_i:
             return None
-        return x1, y1, x2, y2
+        return x1_i, y1_i, x2_i, y2_i
 
-    def run_on_frame(self, frame, det_result, conf=0.25, iou=0.45):
+    @staticmethod
+    def _resolve_name(names: dict[int, str] | list[str], cls_id: int) -> str:
+        if isinstance(names, dict):
+            return str(names.get(cls_id, cls_id))
+        if 0 <= cls_id < len(names):
+            return str(names[cls_id])
+        return str(cls_id)
+
+    def run_on_frame(
+        self,
+        frame,
+        det_result,
+        conf: float = 0.25,
+        iou: float = 0.45,
+    ) -> list[PoseDetection]:
         if det_result.boxes is None or len(det_result.boxes) == 0:
             return []
 
         h, w = frame.shape[:2]
-        results = []
+        mapped_results: list[PoseDetection] = []
 
-        for box_xyxy, cls_id in zip(det_result.boxes.xyxy.tolist(), det_result.boxes.cls.tolist()):
-            cls_name = str(det_result.names.get(int(cls_id), cls_id))
+        boxes_xyxy = det_result.boxes.xyxy.tolist()
+        cls_ids = det_result.boxes.cls.tolist()
+
+        for box_xyxy, cls_id in zip(boxes_xyxy, cls_ids):
+            cls_name = self._resolve_name(det_result.names, int(cls_id))
             if cls_name not in self.target_names:
                 continue
 
@@ -81,54 +100,89 @@ class PoseDetector:
             if crop.size == 0:
                 continue
 
-            pose_results = self.model.predict(source=crop, conf=conf, iou=iou, verbose=False)
-            if not pose_results or pose_results[0].keypoints is None:
+            pose_results = self.model.predict(
+                source=crop,
+                conf=conf,
+                iou=iou,
+                verbose=False,
+            )
+            if not pose_results:
+                continue
+            pose_result = pose_results[0]
+            if pose_result.keypoints is None or pose_result.keypoints.xy is None:
+                continue
+            if len(pose_result.keypoints.xy) == 0:
                 continue
 
-            kpt = pose_results[0].keypoints
-            if kpt.xy is None or len(kpt.xy) == 0:
-                continue
+            # 取第一条姿态结果并映射回原图坐标
+            pose_xy = pose_result.keypoints.xy[0].tolist()
 
-            points = []
-            xy = kpt.xy[0].tolist()
-            confs = kpt.conf[0].tolist() if kpt.conf is not None else [1.0] * len(xy)
-            for idx, (px, py) in enumerate(xy):
-                points.append(PosePoint(x=int(px + x1), y=int(py + y1), conf=float(confs[idx])))
+            points: list[PosePoint] = []
+            point_confs = None
+            if pose_result.keypoints.conf is not None and len(pose_result.keypoints.conf) > 0:
+                point_confs = pose_result.keypoints.conf[0].tolist()
+
+            for idx, (px, py) in enumerate(pose_xy):
+                conf_v = 1.0
+                if point_confs is not None and idx < len(point_confs):
+                    conf_v = float(point_confs[idx])
+                points.append(PosePoint(x=int(px + x1), y=int(py + y1), conf=conf_v))
 
             reading = self._compute_reading(points)
-            results.append(PoseDetection(cls_name=cls_name, box=(x1, y1, x2, y2), points=points, reading=reading))
+            mapped_results.append(
+                PoseDetection(
+                    cls_name=cls_name,
+                    box=(x1, y1, x2, y2),
+                    points=points,
+                    reading=reading,
+                )
+            )
 
-        return results
+        return mapped_results
 
     @staticmethod
-    def _compute_reading(points):
-        expected = len(DEFAULT_FRONT_VIEW_ANCHOR_POINTS) + 1
-        if len(points) < expected:
+    def _compute_reading(points: list[PosePoint]) -> float | None:
+        expected_points = len(DEFAULT_FRONT_VIEW_ANCHOR_POINTS) + 1
+        if len(points) < expected_points:
             return None
-        kpt_slice = points[:expected]
-        if any(p.conf < READING_KPT_CONF for p in kpt_slice):
+
+        kpt_slice = points[:expected_points]
+        if any(point.conf < READING_KPT_CONF for point in kpt_slice):
             return None
+
+        src_points = [(point.x, point.y, point.conf) for point in kpt_slice]
         try:
-            reading, _, _, _ = parse_readdata([(p.x, p.y, p.conf) for p in kpt_slice])
+            reading, _, _, _ = parse_readdata(src_points)
             return float(reading)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None
 
     @staticmethod
-    def draw(frame, pose_detections, conf_thr=0.2):
+    def draw_keypoints(frame, pose_detections: list[PoseDetection], conf_thr: float = 0.2) -> None:
         for det in pose_detections:
             for p in det.points:
-                if p.conf >= conf_thr:
-                    cv2.circle(frame, (p.x, p.y), 3, (0, 255, 255), -1)
+                if p.conf < conf_thr:
+                    continue
+                cv2.circle(frame, (p.x, p.y), 3, (0, 255, 255), -1)
+
             if det.reading is not None:
                 x1, y1, _, _ = det.box
-                cv2.putText(frame, f"reading: {det.reading:.2f}", (x1, max(30, y1 - 50)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 255, 255), 4, cv2.LINE_AA)
+                text = f"reading: {det.reading:.2f}"
+                cv2.putText(
+                    frame,
+                    text,
+                    (x1, max(30, y1 - 50)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.1,
+                    (0, 255, 255),
+                    4,
+                    cv2.LINE_AA,
+                )
 
 
-def main():
+def main() -> None:
     det_model = YOLO(MODEL_PATH)
-    pose_detector = PoseDetector(POSE_MODE_PATH, pose_cls_names)
+    pose_detector = SecondaryPoseDetector(POSE_MODE_PATH, pose_cls_names)
 
     frame = cv2.imread(IMAGE_PATH)
     if frame is None:
@@ -138,8 +192,9 @@ def main():
     result = results[0]
 
     annotated = result.plot(img=frame.copy())
-    pose_dets = pose_detector.run_on_frame(frame, result, conf=CONF, iou=IOU)
-    pose_detector.draw(annotated, pose_dets)
+    # 关键点检测使用较低的置信度阈值
+    pose_dets = pose_detector.run_on_frame(frame, result, conf=READING_KPT_CONF, iou=IOU)
+    pose_detector.draw_keypoints(annotated, pose_dets)
 
     # 打印检测结果
     box_count = 0 if result.boxes is None else len(result.boxes)
