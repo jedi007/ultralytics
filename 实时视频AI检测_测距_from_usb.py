@@ -24,6 +24,12 @@ CONF = 0.55
 IOU = 0.45
 IMGSZ = [384, 640]
 DEVICE = None
+
+# 单目测距参数
+FOCAL_LENGTH_MM = 5.4  # 摄像头焦距 (mm)
+TARGET_SIZE_MM = 92.0    # 目标实际大小 (mm)
+SENSOR_WIDTH_MM = 5.76   # 传感器宽度 (mm)，1/2.8英寸传感器
+
 WINDOW_NAME = "YOLO Real-time Detection"
 QUIT_KEY = "q"  # 按 q 退出
 DISPLAY_SCALE = 1.0  # 显示窗口相对原图的缩放比例
@@ -275,6 +281,40 @@ class RealTimeVideoDetector:
 
                     # 在原图上绘制检测框并显示，不写入任何 label 或图片文件
                     annotated_frame = result.plot(img=frame.copy())
+
+                    # 单目测距：在检测框下方显示距离
+                    if result.boxes is not None and len(result.boxes) > 0:
+                        # 计算像素焦距 = 物理焦距 × 图像宽度 / 传感器宽度
+                        img_width = frame.shape[1]
+                        pixel_focal = FOCAL_LENGTH_MM * img_width / SENSOR_WIDTH_MM
+
+                        boxes_xyxy = result.boxes.xyxy.cpu().numpy()
+                        for box in boxes_xyxy:
+                            x1, y1, x2, y2 = box
+                            box_width_px = x2 - x1
+                            box_height_px = y2 - y1
+                            # 取检测框的较小边作为目标尺寸（适用于不同朝向）
+                            target_px = min(box_width_px, box_height_px)
+
+                            if target_px > 0:
+                                # 距离 = 实际大小 × 像素焦距 / 像素尺寸
+                                distance_mm = TARGET_SIZE_MM * pixel_focal / target_px
+                                distance_m = distance_mm / 1000.0
+
+                                # 在检测框下方显示距离
+                                text = f"{distance_m:.2f}m"
+                                text_x = int(x1)
+                                text_y = int(y2) + 25
+                                cv2.putText(
+                                    annotated_frame,
+                                    text,
+                                    (text_x, text_y),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.8,
+                                    (0, 255, 0),
+                                    2,
+                                    cv2.LINE_AA,
+                                )
 
                     # 二级关键点检测：仅对指定类别进行扣图并回填关键点到原图
                     pose_detections = self.pose_detector.run_on_frame(
