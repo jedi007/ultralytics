@@ -6,6 +6,7 @@ import time
 
 import cv2
 
+from USBCameraCapture import CameraCapture
 from point_data_parser import DEFAULT_FRONT_VIEW_ANCHOR_POINTS, parse_readdata
 from ultralytics import YOLO
 from ultralytics.utils import TQDM
@@ -15,8 +16,10 @@ from ultralytics.utils import TQDM
 # Config (edit as needed)
 # =========================
 MODEL_PATH = "weights/det_instrument_20260817.pt"
-# VIDEO_PATH = "/data/清洗cache/video/26-08-14/已处理/rtsp_record_2026-08-14-11-02-19.mp4"
-VIDEO_PATH = "/data/采集数据/仪表/内江化工厂/锐尔威视录制/usb_video_20260826_155751.mp4"
+CAMERA_ID = 0
+CAMERA_WIDTH = 1920
+CAMERA_HEIGHT = 1080
+CAMERA_FPS = 30
 CONF = 0.55
 IOU = 0.45
 IMGSZ = [384, 640]
@@ -24,13 +27,17 @@ DEVICE = None
 WINDOW_NAME = "YOLO Real-time Detection"
 QUIT_KEY = "q"  # 按 q 退出
 DISPLAY_SCALE = 1.0  # 显示窗口相对原图的缩放比例
-MAX_DISPLAY_FPS = 10.0  # 显示帧率上限，避免播放过快
+MAX_DISPLAY_FPS = 50.0  # 显示帧率上限，避免播放过快
 
 
-POSE_MODE_PATH = "weights/pose_instrument_m_260825.pt"
+POSE_MODE_PATH = "weights/pose_instrument_m_260821_2.pt"
 pose_cls_names = ["instrument"]
 READING_KPT_CONF = 0.2
 
+min_value = 0
+max_value = 2.5
+total_value = max_value - min_value
+readings = [min_value, min_value + total_value * 0.2, min_value + total_value * 0.4, min_value + total_value * 0.6, min_value + total_value * 0.8, max_value]
 
 @dataclass
 class PosePoint:
@@ -158,7 +165,7 @@ class SecondaryPoseDetector:
 
         src_points = [(point.x, point.y, point.conf) for point in kpt_slice]
         try:
-            reading, _, _, _ = parse_readdata(src_points)
+            reading, _, _, _ = parse_readdata(src_points, readings=readings)
             return float(reading)
         except Exception:  # noqa: BLE001
             return None
@@ -209,7 +216,10 @@ class RealTimeVideoDetector:
 
     def infer_stream(
         self,
-        video_path: str,
+        camera_id: int = 0,
+        camera_width: int = 1920,
+        camera_height: int = 1080,
+        camera_fps: int = 30,
         conf: float = 0.25,
         iou: float = 0.45,
         imgsz: list[int] = [384, 640],
@@ -219,16 +229,17 @@ class RealTimeVideoDetector:
         display_scale: float = 1.0,
         max_display_fps: float = 15.0,
     ) -> InferenceStats:
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            raise RuntimeError(f"无法打开视频流: {video_path}")
+        cam = CameraCapture(camera=camera_id, width=camera_width, height=camera_height, fps=camera_fps)
+        try:
+            cam.open()
+        except RuntimeError as exc:
+            raise RuntimeError(f"无法打开USB摄像头: {exc}") from exc
 
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        stats = InferenceStats(total_frames=max(total_frames, 0))
+        stats = InferenceStats()
 
         progress = TQDM(
-            total=total_frames if total_frames > 0 else None,
-            desc="视频推理进度",
+            total=None,
+            desc="摄像头推理进度",
             unit="帧",
         )
 
@@ -241,11 +252,13 @@ class RealTimeVideoDetector:
 
         try:
             while True:
-                success, frame = cap.read()
+                success, frame = cam.read()
                 if not success:
+                    print("读取摄像头帧失败，退出。")
                     break
 
                 frame_index += 1
+                stats.total_frames += 1
 
                 try:
                     results = self.model.predict(
@@ -296,11 +309,9 @@ class RealTimeVideoDetector:
                     break
                 last_show_time = time.perf_counter()
 
-            if stats.total_frames == 0:
-                stats.total_frames = frame_index
         finally:
             progress.close()
-            cap.release()
+            cam.release()
             cv2.destroyAllWindows()
 
         return stats
@@ -310,7 +321,10 @@ def main() -> None:
     detector = RealTimeVideoDetector(model_path=MODEL_PATH)
 
     stats = detector.infer_stream(
-        video_path=VIDEO_PATH,
+        camera_id=CAMERA_ID,
+        camera_width=CAMERA_WIDTH,
+        camera_height=CAMERA_HEIGHT,
+        camera_fps=CAMERA_FPS,
         conf=CONF,
         iou=IOU,
         imgsz=IMGSZ,
@@ -327,7 +341,7 @@ def main() -> None:
     print(f"有效推理成功帧: {stats.success_frames}")
     print(f"推理失败帧: {stats.failed_frames}")
     print(f"检测目标总框数: {stats.total_boxes}")
-    print(f"视频流地址: {VIDEO_PATH}")
+    print(f"摄像头ID: {CAMERA_ID}")
     print("="*50)
 
 
