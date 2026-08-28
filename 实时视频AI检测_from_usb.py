@@ -34,6 +34,10 @@ POSE_MODE_PATH = "weights/pose_instrument_m_260821_2.pt"
 pose_cls_names = ["instrument"]
 READING_KPT_CONF = 0.2
 
+min_value = 0
+max_value = 2.5
+total_value = max_value - min_value
+readings = [min_value, min_value + total_value * 0.2, min_value + total_value * 0.4, min_value + total_value * 0.6, min_value + total_value * 0.8, max_value]
 
 @dataclass
 class PosePoint:
@@ -161,7 +165,7 @@ class SecondaryPoseDetector:
 
         src_points = [(point.x, point.y, point.conf) for point in kpt_slice]
         try:
-            reading, _, _, _ = parse_readdata(src_points)
+            reading, _, _, _ = parse_readdata(src_points, readings=readings)
             return float(reading)
         except Exception:  # noqa: BLE001
             return None
