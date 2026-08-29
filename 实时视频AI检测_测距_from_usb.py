@@ -286,7 +286,6 @@ class RealTimeVideoDetector:
                     if result.boxes is not None and len(result.boxes) > 0:
                         # 计算像素焦距 = 物理焦距 × 图像宽度 / 传感器宽度
                         img_width = frame.shape[1]
-                        pixel_focal = FOCAL_LENGTH_MM * img_width / SENSOR_WIDTH_MM
 
                         boxes_xyxy = result.boxes.xyxy.cpu().numpy()
                         for box in boxes_xyxy:
@@ -294,11 +293,13 @@ class RealTimeVideoDetector:
                             box_width_px = x2 - x1
                             box_height_px = y2 - y1
                             # 取检测框的较小边作为目标尺寸（适用于不同朝向）
-                            target_px = min(box_width_px, box_height_px)
-
-                            if target_px > 0:
+                            target_px = max(box_width_px, box_height_px)
+                            
+                            target_size_in_sensor = target_px * SENSOR_WIDTH_MM / img_width
+                            
+                            if target_size_in_sensor > 0:
                                 # 距离 = 实际大小 × 像素焦距 / 像素尺寸
-                                distance_mm = TARGET_SIZE_MM * pixel_focal / target_px
+                                distance_mm =  TARGET_SIZE_MM * FOCAL_LENGTH_MM / target_size_in_sensor
                                 distance_m = distance_mm / 1000.0
 
                                 # 在检测框下方显示距离
