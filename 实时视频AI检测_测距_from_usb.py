@@ -355,7 +355,7 @@ class RealTimeVideoDetector:
                     break
                 elif key == ord("s"):
                     save_path = f"screenshot_{frame_index}.jpg"
-                    cv2.imwrite(save_path, annotated_frame)
+                    cv2.imwrite(save_path, frame)
                     print(f"截图已保存: {save_path}")
                 last_show_time = time.perf_counter()
 
