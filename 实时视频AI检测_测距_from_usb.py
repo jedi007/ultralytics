@@ -30,6 +30,8 @@ FOCAL_LENGTH_MM = 5.4  # 摄像头焦距 (mm)
 TARGET_SIZE_MM = 92.0    # 目标实际大小 (mm)
 SENSOR_WIDTH_MM = 5.76   # 传感器宽度 (mm)，1/2.8英寸传感器
 
+F_DIV_SENSOR = 2.1558  # 这个是实测得出的，与设置的 SENSOR_WIDTH_MM 和 FOCAL_LENGTH_MM 无关
+
 WINDOW_NAME = "YOLO Real-time Detection"
 QUIT_KEY = "q"  # 按 q 退出
 DISPLAY_SCALE = 1.0  # 显示窗口相对原图的缩放比例
@@ -299,11 +301,8 @@ class RealTimeVideoDetector:
                             # 取检测框的较小边作为目标尺寸（适用于不同朝向）
                             target_px = max(box_width_px, box_height_px)
                             
-                            target_size_in_sensor = target_px * SENSOR_WIDTH_MM / img_width
-                            
-                            if target_size_in_sensor > 0:
-                                # 距离 = 实际大小 × 像素焦距 / 像素尺寸
-                                distance_mm =  TARGET_SIZE_MM * FOCAL_LENGTH_MM / target_size_in_sensor
+                            if target_px > 0:
+                                distance_mm =  F_DIV_SENSOR * TARGET_SIZE_MM * img_height / target_px
                                 distance_m = distance_mm / 1000.0
 
                                 # 在检测框下方显示距离
