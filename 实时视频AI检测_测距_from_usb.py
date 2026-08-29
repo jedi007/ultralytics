@@ -288,10 +288,14 @@ class RealTimeVideoDetector:
                         img_width = frame.shape[1]
 
                         boxes_xyxy = result.boxes.xyxy.cpu().numpy()
-                        for box in boxes_xyxy:
+                        cls_ids = result.boxes.cls.cpu().numpy()
+                        for i, box in enumerate(boxes_xyxy):
                             x1, y1, x2, y2 = box
                             box_width_px = x2 - x1
                             box_height_px = y2 - y1
+                            cls_id = int(cls_ids[i]) if i < len(cls_ids) else -1
+                            cls_name = result.names.get(cls_id, str(cls_id))
+                            print(f"[Frame {frame_index}] {cls_name} | w={box_width_px:.0f}px h={box_height_px:.0f}px")
                             # 取检测框的较小边作为目标尺寸（适用于不同朝向）
                             target_px = max(box_width_px, box_height_px)
                             
@@ -345,9 +349,14 @@ class RealTimeVideoDetector:
                 remain = max(0.0, min_frame_interval - elapsed)
                 delay_ms = max(1, int(remain * 1000)) if remain > 0 else 1
 
-                if cv2.waitKey(delay_ms) & 0xFF == key_code:
+                key = cv2.waitKey(delay_ms) & 0xFF
+                if key == key_code:
                     print(f"检测到退出按键: {quit_key}")
                     break
+                elif key == ord("s"):
+                    save_path = f"screenshot_{frame_index}.jpg"
+                    cv2.imwrite(save_path, annotated_frame)
+                    print(f"截图已保存: {save_path}")
                 last_show_time = time.perf_counter()
 
         finally:
