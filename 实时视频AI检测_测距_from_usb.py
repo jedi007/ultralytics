@@ -30,6 +30,12 @@ FOCAL_LENGTH_MM = 5.4  # 摄像头焦距 (mm)
 TARGET_SIZE_MM = 92.0    # 目标实际大小 (mm)
 SENSOR_WIDTH_MM = 5.76   # 传感器宽度 (mm)，1/2.8英寸传感器
 
+# 不同 label 对应的目标实际尺寸 (mm)
+TARGET_SIZE_MM_BY_LABEL: dict[str, float] = {
+    "instrument": 92.0,
+    "instrument_led": 52.0,
+}
+
 F_DIV_SENSOR = 2.1558  # 这个是实测得出的，与设置的 SENSOR_WIDTH_MM 和 FOCAL_LENGTH_MM 无关
 
 WINDOW_NAME = "YOLO Real-time Detection"
@@ -39,7 +45,7 @@ MAX_DISPLAY_FPS = 50.0  # 显示帧率上限，避免播放过快
 
 
 POSE_MODE_PATH = "weights/pose_instrument_m_260821_2.pt"
-pose_cls_names = ["instrument"]
+pose_cls_names = ["instrument", "instrument_led"]
 READING_KPT_CONF = 0.2
 
 min_value = 0
@@ -298,11 +304,12 @@ class RealTimeVideoDetector:
                             cls_id = int(cls_ids[i]) if i < len(cls_ids) else -1
                             cls_name = result.names.get(cls_id, str(cls_id))
                             print(f"[Frame {frame_index}] {cls_name} | w={box_width_px:.0f}px h={box_height_px:.0f}px")
-                            # 取检测框的较小边作为目标尺寸（适用于不同朝向）
+                            # 取检测框的较大边作为目标尺寸（适用于不同朝向）
                             target_px = max(box_width_px, box_height_px)
+                            target_size = TARGET_SIZE_MM_BY_LABEL.get(cls_name, TARGET_SIZE_MM)
                             
                             if target_px > 0:
-                                distance_mm =  F_DIV_SENSOR * TARGET_SIZE_MM * img_height / target_px
+                                distance_mm =  F_DIV_SENSOR * target_size * img_height / target_px
                                 distance_m = distance_mm / 1000.0
 
                                 # 在检测框下方显示距离
