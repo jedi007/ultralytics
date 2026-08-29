@@ -284,8 +284,8 @@ class RealTimeVideoDetector:
 
                     # 单目测距：在检测框下方显示距离
                     if result.boxes is not None and len(result.boxes) > 0:
-                        # 计算像素焦距 = 物理焦距 × 图像宽度 / 传感器宽度
                         img_width = frame.shape[1]
+                        img_height = frame.shape[0]
 
                         boxes_xyxy = result.boxes.xyxy.cpu().numpy()
                         cls_ids = result.boxes.cls.cpu().numpy()
@@ -354,7 +354,7 @@ class RealTimeVideoDetector:
                     print(f"检测到退出按键: {quit_key}")
                     break
                 elif key == ord("s"):
-                    save_path = f"screenshot_{frame_index}.jpg"
+                    save_path = f"./测距存图/screenshot_{frame_index}.jpg"
                     cv2.imwrite(save_path, frame)
                     print(f"截图已保存: {save_path}")
                 last_show_time = time.perf_counter()
