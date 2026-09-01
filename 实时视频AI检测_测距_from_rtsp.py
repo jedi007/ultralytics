@@ -35,8 +35,19 @@ TARGET_SIZE_MM_BY_LABEL: dict[str, float] = {
     "instrument_led": 52.0,
 }
 
-# zoom_absolute=1 102px ==> 2.10m
+# zoom_step=128 698px ==> 5.50m
 F_DIV_SENSOR = 2.1558
+
+# zoom_step=64 341px ==> 5.50m
+F_DIV_SENSOR = 2.1558
+
+# zoom_step=32 186px ==> 5.50m
+F_DIV_SENSOR = 2.1558
+
+# zoom_step=16 106px ==> 5.50m
+F_DIV_SENSOR = 2.1558
+
+
 
 def calc_F_DIV_SENSOR(zoom_absolute):
     """根据 zoom_absolute 计算 F_DIV_SENSOR
