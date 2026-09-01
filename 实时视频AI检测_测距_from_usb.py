@@ -48,6 +48,9 @@ F_DIV_SENSOR = 2.7903
 # zoom_absolute=300  116px ==> 2.77m
 F_DIV_SENSOR = 3.2695
 
+# zoom_absolute=400  135px ==> 2.77m
+F_DIV_SENSOR = 3.8050
+
 # # zoom_absolute=500  167px ==> 2.77m
 # F_DIV_SENSOR = 4.6557
 
