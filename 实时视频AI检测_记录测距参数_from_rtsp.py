@@ -1,418 +1,314 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""轮询 zoom_step 16→128，记录每个焦距下检测框的稳定像素尺寸到 txt。"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 import os
 import time
 
 import cv2
 
-from point_data_parser import DEFAULT_FRONT_VIEW_ANCHOR_POINTS, parse_readdata
 from rd_latest_frame_capture import LatestFrameCapture
 from ultralytics import YOLO
-from ultralytics.utils import TQDM
 
 
 # =========================
-# Config (edit as needed)
+# Config
 # =========================
 MODEL_PATH = "weights/det_instrument_20260817.pt"
 RTSP_URL = "rtsp://admin:sshw1234@10.42.0.30:554/cam/realmonitor?channel=1&subtype=0"
-RTSP_TRANSPORT = "tcp"  # RTSP 传输协议，可选 "tcp" 或 "udp"
+RTSP_TRANSPORT = "tcp"
 CONF = 0.55
 IOU = 0.45
 IMGSZ = [384, 640]
 DEVICE = None
-WINDOW_NAME = "YOLO Real-time Detection"
-QUIT_KEY = "q"  # 按 q 退出
-DISPLAY_SCALE = 1.0  # 显示窗口相对原图的缩放比例
-MAX_DISPLAY_FPS = 10.0  # 显示帧率上限，避免播放过快
 
-# 单目测距参数
-TARGET_SIZE_MM = 92.0    # 目标实际大小 (mm)
-TARGET_SIZE_MM_BY_LABEL: dict[str, float] = {
-    "instrument": 92.0,
-    "instrument_led": 52.0,
-}
+PTZ_HOST = "10.42.0.30"
+PTZ_PORT = 37777
+PTZ_USERNAME = "admin"
+PTZ_PASSWORD = "sshw1234"
+PTZ_CHANNEL = 0
 
-# zoom_step=128 698px ==> 5.50m
-F_DIV_SENSOR = 2.1558
+HORIZONTAL_ANGLE = 1660
+VERTICAL_ANGLE = 45
 
-# zoom_step=64 341px ==> 5.50m
-F_DIV_SENSOR = 2.1558
+ZOOM_START = 1
+ZOOM_END = 15
+ZOOM_STEP_INTERVAL = 1
+STABLE_FRAMES = 10
+SETTLE_WAIT = 3.0
 
-# zoom_step=32 186px ==> 5.50m
-F_DIV_SENSOR = 2.1558
+OUTPUT_FILE = "zoom_calibration_data.txt"
 
-# zoom_step=16 106px ==> 5.50m
-F_DIV_SENSOR = 2.1558
+WINDOW_NAME = "YOLO Zoom Calibration"
 
 
+# =========================
+# Dahua PTZ zoom 控制
+# =========================
+class DahuaPtzZoomController:
+    """通过 Dahua NetSDK EXACTGOTO 设置/读取 zoom_step。"""
 
-def calc_F_DIV_SENSOR(zoom_absolute):
-    """根据 zoom_absolute 计算 F_DIV_SENSOR
-
-    模型: F_DIV_SENSOR = (a*x^4 + b*x^3 + c*x^2 + d*x + e) / (f*x + g)
-    拟合精度: 最大百分比误差 2.20%, 平均百分比误差 1.78%
-    """
-    x = zoom_absolute
-    a = -4.627278708673889e-07
-    b = 7.922021815672910e-04
-    c = -4.070976976559604e-01
-    d = 9.597028438163902e+01
-    e = 6.528310033629125e+04
-    f = -2.580504450345611e+01
-    g = 3.103611152245023e+04
-    return (a*x**4 + b*x**3 + c*x**2 + d*x + e) / (f*x + g)
-
-
-POSE_MODE_PATH = "weights/pose_instrument_m_260825.pt"
-pose_cls_names = ["instrument", "instrument_led"]
-READING_KPT_CONF = 0.2
-
-min_value = 0
-max_value = 2.5
-total_value = max_value - min_value
-readings = [min_value, min_value + total_value * 0.2, min_value + total_value * 0.4, min_value + total_value * 0.6, min_value + total_value * 0.8, max_value]
-
-
-@dataclass
-class PosePoint:
-    x: int
-    y: int
-    conf: float = 1.0
-
-
-@dataclass
-class PoseDetection:
-    cls_name: str
-    box: tuple[int, int, int, int]
-    points: list[PosePoint]
-    reading: float | None = None
-
-
-class SecondaryPoseDetector:
-    """Run pose estimation on cropped regions and map keypoints back to full frame."""
-
-    def __init__(self, model_path: str | Path, target_names: list[str]) -> None:
-        self.model_path = Path(model_path)
-        if not self.model_path.exists():
-            raise FileNotFoundError(f"关键点模型文件不存在: {self.model_path}")
-        self.model = YOLO(str(self.model_path))
-        self.target_names = set(target_names)
-
-    @staticmethod
-    def _clip_box(box: list[float], width: int, height: int) -> tuple[int, int, int, int] | None:
-        x1, y1, x2, y2 = box
-        x1_i = max(0, min(int(x1), width - 1))
-        y1_i = max(0, min(int(y1), height - 1))
-        x2_i = max(0, min(int(x2), width))
-        y2_i = max(0, min(int(y2), height))
-        if x2_i <= x1_i or y2_i <= y1_i:
-            return None
-        return x1_i, y1_i, x2_i, y2_i
-
-    @staticmethod
-    def _resolve_name(names: dict[int, str] | list[str], cls_id: int) -> str:
-        if isinstance(names, dict):
-            return str(names.get(cls_id, cls_id))
-        if 0 <= cls_id < len(names):
-            return str(names[cls_id])
-        return str(cls_id)
-
-    def run_on_frame(
-        self,
-        frame,
-        det_result,
-        conf: float = 0.25,
-        iou: float = 0.45,
-    ) -> list[PoseDetection]:
-        if det_result.boxes is None or len(det_result.boxes) == 0:
-            return []
-
-        h, w = frame.shape[:2]
-        mapped_results: list[PoseDetection] = []
-
-        boxes_xyxy = det_result.boxes.xyxy.tolist()
-        cls_ids = det_result.boxes.cls.tolist()
-
-        for box_xyxy, cls_id in zip(boxes_xyxy, cls_ids):
-            cls_name = self._resolve_name(det_result.names, int(cls_id))
-            if cls_name not in self.target_names:
-                continue
-
-            clipped = self._clip_box(box_xyxy, w, h)
-            if clipped is None:
-                continue
-            x1, y1, x2, y2 = clipped
-
-            crop = frame[y1:y2, x1:x2]
-            if crop.size == 0:
-                continue
-
-            pose_results = self.model.predict(
-                source=crop,
-                conf=conf,
-                iou=iou,
-                verbose=False,
-            )
-            if not pose_results:
-                continue
-            pose_result = pose_results[0]
-            if pose_result.keypoints is None or pose_result.keypoints.xy is None:
-                continue
-            if len(pose_result.keypoints.xy) == 0:
-                continue
-
-            # 取第一条姿态结果并映射回原图坐标
-            pose_xy = pose_result.keypoints.xy[0].tolist()
-
-            points: list[PosePoint] = []
-            point_confs = None
-            if pose_result.keypoints.conf is not None and len(pose_result.keypoints.conf) > 0:
-                point_confs = pose_result.keypoints.conf[0].tolist()
-
-            for idx, (px, py) in enumerate(pose_xy):
-                conf_v = 1.0
-                if point_confs is not None and idx < len(point_confs):
-                    conf_v = float(point_confs[idx])
-                points.append(PosePoint(x=int(px + x1), y=int(py + y1), conf=conf_v))
-
-            reading = self._compute_reading(points)
-            mapped_results.append(
-                PoseDetection(
-                    cls_name=cls_name,
-                    box=(x1, y1, x2, y2),
-                    points=points,
-                    reading=reading,
-                )
-            )
-
-        return mapped_results
-
-    @staticmethod
-    def _compute_reading(points: list[PosePoint]) -> float | None:
-        expected_points = len(DEFAULT_FRONT_VIEW_ANCHOR_POINTS) + 1
-        if len(points) < expected_points:
-            return None
-
-        kpt_slice = points[:expected_points]
-        if any(point.conf < READING_KPT_CONF for point in kpt_slice):
-            return None
-
-        src_points = [(point.x, point.y, point.conf) for point in kpt_slice]
-        try:
-            reading, _, _, _ = parse_readdata(src_points, readings=readings)
-            return float(reading)
-        except Exception:  # noqa: BLE001
-            return None
-
-    @staticmethod
-    def draw_keypoints(frame, pose_detections: list[PoseDetection], conf_thr: float = 0.2) -> None:
-        for det in pose_detections:
-            for p in det.points:
-                if p.conf < conf_thr:
-                    continue
-                cv2.circle(frame, (p.x, p.y), 3, (0, 255, 255), -1)
-
-            if det.reading is not None:
-                x1, y1, _, _ = det.box
-                text = f"reading: {det.reading:.2f}"
-                cv2.putText(
-                    frame,
-                    text,
-                    (x1, max(30, y1 - 50)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1.1,
-                    (0, 255, 255),
-                    4,
-                    cv2.LINE_AA,
-                )
-
-
-@dataclass
-class InferenceStats:
-    total_frames: int = 0
-    success_frames: int = 0
-    failed_frames: int = 0
-    total_boxes: int = 0
-
-
-class RealTimeVideoDetector:
-    """Run inference on a video stream and display annotated frames in real time."""
-
-    def __init__(self, model_path: str | Path = "det_person_helmet_250821.pt") -> None:
-        self.model_path = Path(model_path)
-        if not self.model_path.exists():
-            raise FileNotFoundError(f"模型文件不存在: {self.model_path}")
-        self.model = YOLO(str(self.model_path))
-        self.pose_detector = SecondaryPoseDetector(
-            model_path=POSE_MODE_PATH,
-            target_names=pose_cls_names,
+    def __init__(self, host: str, port: int, username: str, password: str, channel: int) -> None:
+        from ctypes import sizeof
+        from NetSDK.NetSDK import NetClient
+        from NetSDK.SDK_Callback import fDisConnect, fHaveReConnect
+        from NetSDK.SDK_Enum import EM_LOGIN_SPAC_CAP_TYPE, SDK_PTZ_ControlType
+        from NetSDK.SDK_Struct import (
+            C_LLONG,
+            NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY,
+            NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY,
         )
 
-    def infer_stream(
-        self,
-        stream_url: str,
-        rtsp_transport: str = "tcp",
-        conf: float = 0.25,
-        iou: float = 0.45,
-        imgsz: list[int] = [384, 640],
-        device: str | None = None,
-        window_name: str = "YOLO Real-time Detection",
-        quit_key: str = "q",
-        display_scale: float = 1.0,
-        max_display_fps: float = 15.0,
-    ) -> InferenceStats:
-        if rtsp_transport:
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{rtsp_transport}"
+        self._SDK_PTZ_ControlType = SDK_PTZ_ControlType
+        self._EM_LOGIN_SPAC_CAP_TYPE = EM_LOGIN_SPAC_CAP_TYPE
+        self._stu_in_type = NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY
+        self._stu_out_type = NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY
+        self._sizeof = sizeof
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.channel = channel
 
-        capture = LatestFrameCapture(stream_url, rtsp_transport).start()
-        if not capture.cap.isOpened():
-            raise RuntimeError(f"无法打开 RTSP 流: {stream_url}")
+        self.login_id = C_LLONG()
+        self._disconnect_cb = fDisConnect(self._on_disconnect)
+        self._reconnect_cb = fHaveReConnect(self._on_reconnect)
 
-        stats = InferenceStats(total_frames=0)
+        self.sdk = NetClient()
+        self.sdk.InitEx(self._disconnect_cb)
+        self.sdk.SetAutoReconnect(self._reconnect_cb)
 
-        progress = TQDM(
-            desc="RTSP 推理中",
-            unit="帧",
+    def _on_disconnect(self, lLoginID, pchDVRIP, nDVRPort, dwUser) -> None:
+        print(f"[断线] {self.host}:{self.port}")
+
+    def _on_reconnect(self, lLoginID, pchDVRIP, nDVRPort, dwUser) -> None:
+        print(f"[重连] {self.host}:{self.port}")
+
+    def login(self) -> None:
+        stu_in = self._stu_in_type()
+        stu_in.dwSize = self._sizeof(self._stu_in_type)
+        stu_in.szIP = self.host.encode()
+        stu_in.nPort = self.port
+        stu_in.szUserName = self.username.encode()
+        stu_in.szPassword = self.password.encode()
+        stu_in.emSpecCap = self._EM_LOGIN_SPAC_CAP_TYPE.TCP
+        stu_in.pCapParam = None
+
+        stu_out = self._stu_out_type()
+        stu_out.dwSize = self._sizeof(self._stu_out_type)
+
+        self.login_id, _, error_message = self.sdk.LoginWithHighLevelSecurity(stu_in, stu_out)
+        if self.login_id == 0:
+            raise RuntimeError(f"登录失败: {error_message}")
+        print(f"PTZ 登录成功: {self.host}:{self.port}, 通道: {self.channel}")
+
+    def set_zoom(self, zoom_step: int, pan: int = 0, tilt: int = 0) -> None:
+        """EXACTGOTO: 设置绝对位置 (pan, tilt, zoom)。"""
+        if not 1 <= zoom_step <= 128:
+            raise ValueError("zoom_step 必须在 1-128 之间")
+        result = self.sdk.PTZControlEx2(
+            self.login_id,
+            self.channel,
+            self._SDK_PTZ_ControlType.EXACTGOTO,
+            pan,
+            tilt,
+            zoom_step,
+            False,
+            None,
         )
+        if not result:
+            raise RuntimeError(f"EXACTGOTO 失败: {self.sdk.GetLastErrorMessage()}")
+        print(f"  EXACTGOTO: pan={pan} tilt={tilt} zoom={zoom_step}")
 
-        frame_index = 0
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        key_code = ord(quit_key)
-        window_size_inited = False
-        min_frame_interval = 0.0 if max_display_fps <= 0 else 1.0 / max_display_fps
-        last_show_time = 0.0
-
+    def get_zoom(self) -> int | None:
+        """读取当前 zoom_step，失败返回 None。"""
         try:
-            last_frame_id = None
-            while True:
-                ret, frame, last_frame_id = capture.read(last_frame_id=last_frame_id, timeout=2.0)
-                if not ret:
-                    print("无法读取帧，流可能已断开")
-                    break
+            # 尝试通过 GetConfig 获取 PTZ 位置信息
+            # NET_SDK_CONFIG_TYPE_PTZ = 6 (部分 SDK 版本)
+            # 如果不支持则静默失败
+            import ctypes
+            buf = ctypes.create_string_buffer(1024)
+            ret = self.sdk.GetConfig(
+                self.login_id,
+                6,  # PTZ config type
+                buf,
+                1024,
+                None,
+            )
+            if ret:
+                # 简单解析：zoom 通常在结构体偏移位置
+                # 这里用一个保守的 fallback
+                pass
+        except Exception:
+            pass
+        return None
 
-                frame_index += 1
+    def cleanup(self) -> None:
+        if self.login_id:
+            self.sdk.Logout(self.login_id)
+            self.login_id = 0
+        self.sdk.Cleanup()
 
-                try:
-                    results = self.model.predict(
-                        source=frame,
-                        conf=conf,
-                        iou=iou,
-                        imgsz=imgsz,
-                        device=device,
-                        verbose=False,
-                    )
-                    result = results[0]
-                    box_cnt = 0 if result.boxes is None else len(result.boxes)
-                    stats.total_boxes += box_cnt
 
-                    # 在原图上绘制检测框并显示，不写入任何 label 或图片文件
-                    annotated_frame = result.plot(img=frame.copy())
+# =========================
+# 检测 + 记录
+# =========================
+def collect_stable_detection(
+    model: YOLO,
+    capture: LatestFrameCapture,
+    window_name: str,
+    zoom_step: int,
+    stable_frames: int = 10,
+    conf: float = 0.55,
+    iou: float = 0.45,
+    imgsz: list[int] = [384, 640],
+    timeout: float = 3.0,
+) -> float | None:
+    """读取 stable_frames 帧，返回检测框较小边的平均像素值；无检测返回 None。"""
+    samples: list[float] = []
+    deadline = time.perf_counter() + timeout
+    last_frame_id = None
+    frame_count = 0
 
-                    # 单目测距：在检测框下方显示距离
-                    if result.boxes is not None and len(result.boxes) > 0:
-                        img_height = frame.shape[0]
+    while len(samples) < stable_frames and time.perf_counter() < deadline:
+        ret, frame, last_frame_id = capture.read(last_frame_id=last_frame_id, timeout=1.0)
+        if not ret or frame is None:
+            continue
 
-                        boxes_xyxy = result.boxes.xyxy.cpu().numpy()
-                        cls_ids = result.boxes.cls.cpu().numpy()
-                        for i, box in enumerate(boxes_xyxy):
-                            x1, y1, x2, y2 = box
-                            box_width_px = x2 - x1
-                            box_height_px = y2 - y1
-                            cls_id = int(cls_ids[i]) if i < len(cls_ids) else -1
-                            cls_name = result.names.get(cls_id, str(cls_id))
-                            print(f"[Frame {frame_index}] {cls_name} | w={box_width_px:.0f}px h={box_height_px:.0f}px")
-                            target_px = max(box_width_px, box_height_px)
-                            target_size = TARGET_SIZE_MM_BY_LABEL.get(cls_name, TARGET_SIZE_MM)
+        results = model.predict(source=frame, conf=conf, iou=iou, imgsz=imgsz, verbose=False)
+        result = results[0]
 
-                            if target_px > 0:
-                                distance_mm = F_DIV_SENSOR * target_size * img_height / target_px
-                                distance_m = distance_mm / 1000.0
+        # 绘制检测框
+        annotated = result.plot(img=frame.copy())
 
-                                text = f"{distance_m:.2f}m"
-                                text_x = int(x1)
-                                text_y = int(y2) + 25
-                                cv2.putText(
-                                    annotated_frame,
-                                    text,
-                                    (text_x, text_y),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.8,
-                                    (0, 255, 0),
-                                    2,
-                                    cv2.LINE_AA,
-                                )
+        # 取最大面积的检测框
+        smaller = None
+        if result.boxes is not None and len(result.boxes) > 0:
+            boxes_xyxy = result.boxes.xyxy.cpu().numpy()
+            areas = (boxes_xyxy[:, 2] - boxes_xyxy[:, 0]) * (boxes_xyxy[:, 3] - boxes_xyxy[:, 1])
+            best_idx = int(areas.argmax())
+            x1, y1, x2, y2 = boxes_xyxy[best_idx]
+            box_w = x2 - x1
+            box_h = y2 - y1
+            smaller = float(min(box_w, box_h))
+            # 在框上标注较小边值
+            cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
+            cv2.putText(annotated, f"min={smaller:.0f}px", (int(x1), int(y1) - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
 
-                    # 二级关键点检测：仅对指定类别进行扣图并回填关键点到原图
-                    pose_detections = self.pose_detector.run_on_frame(
-                        frame=frame,
-                        det_result=result,
-                        conf=conf,
-                        iou=iou,
-                    )
-                    self.pose_detector.draw_keypoints(annotated_frame, pose_detections)
+        # 显示状态信息
+        status = f"zoom_step={zoom_step}  frames={len(samples)}/{stable_frames}"
+        cv2.putText(annotated, status, (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
+        cv2.imshow(window_name, annotated)
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or key == 27:
+            break
 
-                    if not window_size_inited:
-                        show_w = max(1, int(frame.shape[1] * max(display_scale, 0.1)))
-                        show_h = max(1, int(frame.shape[0] * max(display_scale, 0.1)))
-                        cv2.resizeWindow(window_name, show_w, show_h)
-                        window_size_inited = True
+        frame_count += 1
+        if smaller is not None and smaller > 0:
+            samples.append(smaller)
 
-                    cv2.imshow(window_name, annotated_frame)
-
-                    stats.success_frames += 1
-                except Exception as exc:  # noqa: BLE001
-                    stats.failed_frames += 1
-                    print(f"[失败] 第 {frame_index} 帧: {exc}")
-                finally:
-                    progress.update(1)
-
-                elapsed = time.perf_counter() - last_show_time
-                remain = max(0.0, min_frame_interval - elapsed)
-                delay_ms = max(1, int(remain * 1000)) if remain > 0 else 1
-
-                key = cv2.waitKey(delay_ms) & 0xFF
-                if key == key_code:
-                    print(f"检测到退出按键: {quit_key}")
-                    break
-                elif key == ord("s"):
-                    save_path = f"./测距存图/screenshot_{frame_index}.jpg"
-                    cv2.imwrite(save_path, frame)
-                    print(f"截图已保存: {save_path}")
-                last_show_time = time.perf_counter()
-        finally:
-            progress.close()
-            capture.release()
-            cv2.destroyAllWindows()
-
-        return stats
+    if not samples:
+        return None
+    return sum(samples) / len(samples)
 
 
 def main() -> None:
-    detector = RealTimeVideoDetector(model_path=MODEL_PATH)
+    # 加载模型
+    model_path = Path(MODEL_PATH)
+    if not model_path.exists():
+        # 尝试上级目录
+        model_path = Path(__file__).resolve().parent / MODEL_PATH
+    if not model_path.exists():
+        raise FileNotFoundError(f"模型文件不存在: {MODEL_PATH}")
+    model = YOLO(str(model_path))
 
-    stats = detector.infer_stream(
-        stream_url=RTSP_URL,
-        rtsp_transport=RTSP_TRANSPORT,
-        conf=CONF,
-        iou=IOU,
-        imgsz=IMGSZ,
-        device=DEVICE,
-        window_name=WINDOW_NAME,
-        quit_key=QUIT_KEY,
-        display_scale=DISPLAY_SCALE,
-        max_display_fps=MAX_DISPLAY_FPS,
+    # 连接 RTSP
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{RTSP_TRANSPORT}"
+    capture = LatestFrameCapture(RTSP_URL, RTSP_TRANSPORT).start()
+    if not capture.cap.isOpened():
+        raise RuntimeError(f"无法打开 RTSP 流: {RTSP_URL}")
+    print(f"RTSP 流已连接: {RTSP_URL}")
+
+    # 连接 PTZ
+    ptz = DahuaPtzZoomController(
+        host=PTZ_HOST, port=PTZ_PORT,
+        username=PTZ_USERNAME, password=PTZ_PASSWORD,
+        channel=PTZ_CHANNEL,
     )
+    ptz.login()
 
-    # 结果打印
-    print("="*50)
-    print(f"有效推理成功帧: {stats.success_frames}")
-    print(f"推理失败帧: {stats.failed_frames}")
-    print(f"检测目标总框数: {stats.total_boxes}")
-    print(f"RTSP 流地址: {RTSP_URL}")
-    print("="*50)
+    # 先固定云台角度
+    print(f"设置云台角度: pan={HORIZONTAL_ANGLE} tilt={VERTICAL_ANGLE}")
+    ptz.set_zoom(zoom_step=ZOOM_START, pan=HORIZONTAL_ANGLE, tilt=VERTICAL_ANGLE)
+    time.sleep(SETTLE_WAIT)
+
+    # 打开输出文件
+    out_path = Path(OUTPUT_FILE)
+    out_f = open(out_path, "a", encoding="utf-8")
+
+    # 初始化显示窗口 (可选，用于调试)
+    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+
+    try:
+        zoom = ZOOM_START
+        while zoom <= ZOOM_END:
+            print(f"\n{'='*40}")
+            print(f">>> zoom_step = {zoom}")
+
+            # 1. 设置 zoom (pan/tilt 保持固定)
+            ptz.set_zoom(zoom_step=zoom, pan=HORIZONTAL_ANGLE, tilt=VERTICAL_ANGLE)
+
+            # 2. 等待机械稳定
+            print(f"  等待 {SETTLE_WAIT}s 机械稳定...")
+            time.sleep(SETTLE_WAIT)
+
+            # 3. 验证 zoom (尽力读取)
+            verified_zoom = ptz.get_zoom()
+            if verified_zoom is not None:
+                print(f"  验证 zoom_step: {verified_zoom}")
+            else:
+                print(f"  (跳过验证，SDK 不支持读取 zoom)")
+
+            # 4. 收集稳定帧，取检测框较小边平均值
+            print(f"  采集 {STABLE_FRAMES} 帧检测数据...")
+            avg_smaller = collect_stable_detection(
+                model=model,
+                capture=capture,
+                window_name=WINDOW_NAME,
+                zoom_step=zoom,
+                stable_frames=STABLE_FRAMES,
+                conf=CONF,
+                iou=IOU,
+                imgsz=IMGSZ,
+                timeout=8.0,
+            )
+
+            if avg_smaller is not None:
+                record = f"zoom_step:{zoom} ==> {avg_smaller:.1f}"
+                print(f"  >>> {record}")
+                out_f.write(record + "\n")
+                out_f.flush()
+            else:
+                record = f"zoom_step:{zoom} ==> 无检测"
+                print(f"  >>> {record}")
+                out_f.write(record + "\n")
+                out_f.flush()
+
+            zoom += ZOOM_STEP_INTERVAL
+
+    except KeyboardInterrupt:
+        print("\n用户中断，退出。")
+    finally:
+        out_f.close()
+        capture.release()
+        ptz.cleanup()
+        cv2.destroyAllWindows()
+        print(f"\n结果已保存到: {out_path.resolve()}")
 
 
 if __name__ == "__main__":

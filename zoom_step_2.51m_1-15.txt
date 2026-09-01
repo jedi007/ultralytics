@@ -1,0 +1,15 @@
+zoom_step:1 ==> 82.3
+zoom_step:2 ==> 87.8
+zoom_step:3 ==> 95.9
+zoom_step:4 ==> 108.9
+zoom_step:5 ==> 114.4
+zoom_step:6 ==> 129.6
+zoom_step:7 ==> 140.1
+zoom_step:8 ==> 151.5
+zoom_step:9 ==> 160.0
+zoom_step:10 ==> 172.8
+zoom_step:11 ==> 181.0
+zoom_step:12 ==> 194.3
+zoom_step:13 ==> 205.0
+zoom_step:14 ==> 213.9
+zoom_step:15 ==> 222.4
