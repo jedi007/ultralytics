@@ -122,6 +122,23 @@ class CameraCapture:
 			return False, None
 		return self.cap.read()
 
+	def get_zoom(self) -> int | None:
+		"""通过 v4l2-ctl 查询当前 zoom_absolute 值，失败返回 None。"""
+		device_path = f"/dev/video{self.camera}"
+		try:
+			result = subprocess.run(
+				["v4l2-ctl", "-d", device_path, "-C", "zoom_absolute"],
+				capture_output=True,
+				text=True,
+				timeout=1.0,
+			)
+			if result.returncode == 0:
+				# 输出格式: "zoom_absolute: 800\n"
+				return int(result.stdout.strip().split(":")[-1].strip())
+		except (subprocess.TimeoutExpired, ValueError, FileNotFoundError):
+			pass
+		return None
+
 	def release(self) -> None:
 		if self.cap is not None:
 			try:

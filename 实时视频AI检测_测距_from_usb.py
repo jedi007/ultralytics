@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import threading
 import time
 
 import cv2
@@ -283,6 +284,17 @@ class InferenceStats:
     total_boxes: int = 0
 
 
+def _zoom_polling_worker(cam: "CameraCapture", stop_event: threading.Event) -> None:
+    """后台线程: 每 0.1s 查询一次 zoom_absolute，更新全局 F_DIV_SENSOR。"""
+    global F_DIV_SENSOR
+    while not stop_event.is_set():
+        zoom = cam.get_zoom()
+        print(f"new zoom_absolute={zoom}")
+        if zoom is not None:
+            F_DIV_SENSOR = calc_F_DIV_SENSOR(zoom)
+        stop_event.wait(0.1)
+
+
 class RealTimeVideoDetector:
     """Run inference on a video stream and display annotated frames in real time."""
 
@@ -318,6 +330,13 @@ class RealTimeVideoDetector:
             raise RuntimeError(f"无法打开USB摄像头: {exc}") from exc
 
         stats = InferenceStats()
+
+        # 启动后台焦距轮询线程
+        zoom_stop = threading.Event()
+        zoom_thread = threading.Thread(
+            target=_zoom_polling_worker, args=(cam, zoom_stop), daemon=True
+        )
+        zoom_thread.start()
 
         progress = TQDM(
             total=None,
@@ -434,6 +453,8 @@ class RealTimeVideoDetector:
                 last_show_time = time.perf_counter()
 
         finally:
+            zoom_stop.set()
+            zoom_thread.join(timeout=2.0)
             progress.close()
             cam.release()
             cv2.destroyAllWindows()
