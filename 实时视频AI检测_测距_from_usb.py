@@ -39,27 +39,54 @@ TARGET_SIZE_MM_BY_LABEL: dict[str, float] = {
 # zoom_absolute=1 102px ==> 2.10m
 F_DIV_SENSOR = 2.1558  # 这个是实测得出的，与设置的 SENSOR_WIDTH_MM 和 FOCAL_LENGTH_MM 无关
 
-# zoom_absolute=100  95px ==> 2.65m
-F_DIV_SENSOR = 2.5334
+# # zoom_absolute=100  95px ==> 2.65m
+# F_DIV_SENSOR = 2.5334
 
-# zoom_absolute=200  99px ==> 2.77m
-F_DIV_SENSOR = 2.7903
+# # zoom_absolute=200  99px ==> 2.77m
+# F_DIV_SENSOR = 2.7903
 
-# zoom_absolute=300  116px ==> 2.77m
-F_DIV_SENSOR = 3.2695
+# # zoom_absolute=300  116px ==> 2.77m
+# F_DIV_SENSOR = 3.2695
 
-# zoom_absolute=400  135px ==> 2.77m
-F_DIV_SENSOR = 3.8050
+# # zoom_absolute=400  135px ==> 2.77m
+# F_DIV_SENSOR = 3.8050
 
-# # zoom_absolute=500  167px ==> 2.77m
-# F_DIV_SENSOR = 4.6557
+# # # zoom_absolute=500  167px ==> 2.77m
+# # F_DIV_SENSOR = 4.6557
 
-# # zoom_absolute=800  326px ==> 2.77m
+# # zoom_absolute=600  204px ==> 2.77m  
+# F_DIV_SENSOR = 5.74980
+
+# # zoom_absolute=700  256px ==> 2.77m  
+# F_DIV_SENSOR = 7.21543
+
+# # zoom_absolute=800  326px ==> 2.77m  0.028185276
 # F_DIV_SENSOR = 9.1884
+
+# # zoom_absolute=900  427px ==> 2.77m
+# F_DIV_SENSOR = 12.03511
+
+# # zoom_absolute=1000  580px ==> 2.77m
+# F_DIV_SENSOR = 16.34746
+
+# # zoom_absolute=1100  723px ==> 2.77m
+# F_DIV_SENSOR = 20.37795
+
+# # # zoom_absolute=1188  1080px ==> 2.77m
+# F_DIV_SENSOR = 30.44009808
 
 
 # zoom_absolute = 800
 # F_DIV_SENSOR = 0.00530575 * zoom_absolute + 2.002825
+# print(f"zoom_absolute={zoom_absolute} F_DIV_SENSOR={F_DIV_SENSOR:.4f}")
+
+# zoom_absolute = 1000
+# a = 0.000000011972207
+# b = -0.000003031614821
+# c = 0.003370560513388
+# d = 2.124560067261915
+# S = 0.980469535452923
+# F_DIV_SENSOR = (a*zoom_absolute**3 + b*zoom_absolute**2 + c*zoom_absolute + d) / S 
 # print(f"zoom_absolute={zoom_absolute} F_DIV_SENSOR={F_DIV_SENSOR:.4f}")
 
 WINDOW_NAME = "YOLO Real-time Detection"
