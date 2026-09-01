@@ -36,7 +36,28 @@ TARGET_SIZE_MM_BY_LABEL: dict[str, float] = {
     "instrument_led": 52.0,
 }
 
+# zoom_absolute=1 102px ==> 2.10m
 F_DIV_SENSOR = 2.1558  # 这个是实测得出的，与设置的 SENSOR_WIDTH_MM 和 FOCAL_LENGTH_MM 无关
+
+# zoom_absolute=100  95px ==> 2.65m
+F_DIV_SENSOR = 2.5334
+
+# zoom_absolute=200  99px ==> 2.77m
+F_DIV_SENSOR = 2.7903
+
+# zoom_absolute=300  116px ==> 2.77m
+F_DIV_SENSOR = 3.2695
+
+# # zoom_absolute=500  167px ==> 2.77m
+# F_DIV_SENSOR = 4.6557
+
+# # zoom_absolute=800  326px ==> 2.77m
+# F_DIV_SENSOR = 9.1884
+
+
+# zoom_absolute = 800
+# F_DIV_SENSOR = 0.00530575 * zoom_absolute + 2.002825
+# print(f"zoom_absolute={zoom_absolute} F_DIV_SENSOR={F_DIV_SENSOR:.4f}")
 
 WINDOW_NAME = "YOLO Real-time Detection"
 QUIT_KEY = "q"  # 按 q 退出
