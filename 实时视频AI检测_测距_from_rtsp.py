@@ -28,6 +28,13 @@ QUIT_KEY = "q"  # 按 q 退出
 DISPLAY_SCALE = 1.0  # 显示窗口相对原图的缩放比例
 MAX_DISPLAY_FPS = 10.0  # 显示帧率上限，避免播放过快
 
+# PTZ 配置 (用于获取实时 zoom_step)
+PTZ_HOST = "10.42.0.30"
+PTZ_PORT = 37777
+PTZ_USERNAME = "admin"
+PTZ_PASSWORD = "sshw1234"
+PTZ_CHANNEL = 0
+
 # 单目测距参数
 TARGET_SIZE_MM = 92.0    # 目标实际大小 (mm)
 TARGET_SIZE_MM_BY_LABEL: dict[str, float] = {
@@ -175,6 +182,117 @@ min_value = 0
 max_value = 2.5
 total_value = max_value - min_value
 readings = [min_value, min_value + total_value * 0.2, min_value + total_value * 0.4, min_value + total_value * 0.6, min_value + total_value * 0.8, max_value]
+
+
+# =========================
+# PTZ zoom_step 实时监控
+# =========================
+class ZoomStatusMonitor:
+    """通过 Dahua AttachPTZStatusProc 回调获取实时 zoom_step。"""
+
+    def __init__(self, host: str, port: int, username: str, password: str, channel: int) -> None:
+        from ctypes import POINTER, cast, sizeof
+        from NetSDK.NetSDK import NetClient
+        from NetSDK.SDK_Callback import fDisConnect, fHaveReConnect, fPTZStatusProcCallBack
+        from NetSDK.SDK_Enum import EM_LOGIN_SPAC_CAP_TYPE
+        from NetSDK.SDK_Struct import (
+            C_LLONG,
+            NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY,
+            NET_IN_PTZ_STATUS_PROC,
+            NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY,
+            NET_OUT_PTZ_STATUS_PROC,
+            SDK_PTZ_LOCATION_INFO,
+        )
+
+        self._cast = cast
+        self._sizeof = sizeof
+        self._POINTER = POINTER
+        self._SDK_PTZ_LOCATION_INFO = SDK_PTZ_LOCATION_INFO
+        self._NET_IN_PTZ_STATUS_PROC = NET_IN_PTZ_STATUS_PROC
+        self._NET_OUT_PTZ_STATUS_PROC = NET_OUT_PTZ_STATUS_PROC
+        self._NET_IN_LOGIN = NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY
+        self._NET_OUT_LOGIN = NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY
+        self._EM_LOGIN_SPAC_CAP_TYPE = EM_LOGIN_SPAC_CAP_TYPE
+
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.channel = channel
+
+        self.login_id = C_LLONG()
+        self.attach_handle = C_LLONG()
+        self._lock = __import__("threading").Lock()
+        self._zoom_step: int | None = None
+        self._last_valid_status: dict | None = None
+
+        self.sdk = NetClient()
+        self._disconnect_cb = fDisConnect(self._on_disconnect)
+        self._reconnect_cb = fHaveReConnect(self._on_reconnect)
+        self._ptz_status_cb = fPTZStatusProcCallBack(self._on_ptz_status)
+        self.sdk.InitEx(self._disconnect_cb)
+        self.sdk.SetAutoReconnect(self._reconnect_cb)
+
+    def _on_disconnect(self, lLoginID, pchDVRIP, nDVRPort, dwUser) -> None:
+        print(f"[PTZ 断线] {self.host}:{self.port}")
+
+    def _on_reconnect(self, lLoginID, pchDVRIP, nDVRPort, dwUser) -> None:
+        print(f"[PTZ 重连] {self.host}:{self.port}")
+
+    def _on_ptz_status(self, lLoginID, lAttachHandle, pBuf, nBufLen, dwUser) -> None:
+        if not pBuf:
+            return
+        ptz_info = self._cast(pBuf, self._POINTER(self._SDK_PTZ_LOCATION_INFO)).contents
+        zoom = ptz_info.nPTZZoom
+        if zoom > 0:
+            with self._lock:
+                self._zoom_step = zoom
+
+    def login(self) -> None:
+        stu_in = self._NET_IN_LOGIN()
+        stu_in.dwSize = self._sizeof(self._NET_IN_LOGIN)
+        stu_in.szIP = self.host.encode()
+        stu_in.nPort = self.port
+        stu_in.szUserName = self.username.encode()
+        stu_in.szPassword = self.password.encode()
+        stu_in.emSpecCap = self._EM_LOGIN_SPAC_CAP_TYPE.TCP
+        stu_in.pCapParam = None
+
+        stu_out = self._NET_OUT_LOGIN()
+        stu_out.dwSize = self._sizeof(self._NET_OUT_LOGIN)
+
+        self.login_id, _, err = self.sdk.LoginWithHighLevelSecurity(stu_in, stu_out)
+        if self.login_id == 0:
+            raise RuntimeError(f"PTZ 登录失败: {err}")
+        print(f"PTZ 状态监控登录成功: {self.host}:{self.port}")
+
+    def attach(self) -> None:
+        stu_in = self._NET_IN_PTZ_STATUS_PROC()
+        stu_in.dwSize = self._sizeof(self._NET_IN_PTZ_STATUS_PROC)
+        stu_in.nChannel = self.channel
+        stu_in.cbPTZStatusProc = self._ptz_status_cb
+        stu_in.dwUser = 0
+
+        stu_out = self._NET_OUT_PTZ_STATUS_PROC()
+        stu_out.dwSize = self._sizeof(self._NET_OUT_PTZ_STATUS_PROC)
+
+        self.attach_handle = self.sdk.AttachPTZStatusProc(self.login_id, stu_in, stu_out, 5000)
+        if not self.attach_handle:
+            raise RuntimeError(f"AttachPTZStatusProc 失败: {self.sdk.GetLastErrorMessage()}")
+        print("PTZ 状态订阅成功")
+
+    def get_zoom(self) -> int | None:
+        with self._lock:
+            return self._zoom_step
+
+    def cleanup(self) -> None:
+        if self.attach_handle:
+            self.sdk.DetachPTZStatusProc(self.attach_handle)
+            self.attach_handle = 0
+        if self.login_id:
+            self.sdk.Logout(self.login_id)
+            self.login_id = 0
+        self.sdk.Cleanup()
 
 
 @dataclass
@@ -339,6 +457,15 @@ class InferenceStats:
     total_boxes: int = 0
 
 
+def _zoom_polling_worker(monitor: ZoomStatusMonitor, stop_event: "threading.Event", interval: float = 1.0) -> None:
+    """后台线程: 每 interval 秒读取一次 PTZ zoom_step。"""
+    while not stop_event.is_set():
+        zoom = monitor.get_zoom()
+        if zoom is not None:
+            print(f"[Zoom 监控] zoom_step={zoom}")
+        stop_event.wait(interval)
+
+
 class RealTimeVideoDetector:
     """Run inference on a video stream and display annotated frames in real time."""
 
@@ -364,13 +491,27 @@ class RealTimeVideoDetector:
         quit_key: str = "q",
         display_scale: float = 1.0,
         max_display_fps: float = 15.0,
+        zoom_monitor: ZoomStatusMonitor | None = None,
     ) -> InferenceStats:
+        import threading as _threading
+
         if rtsp_transport:
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{rtsp_transport}"
 
         capture = LatestFrameCapture(stream_url, rtsp_transport).start()
         if not capture.cap.isOpened():
             raise RuntimeError(f"无法打开 RTSP 流: {stream_url}")
+
+        # 启动后台 zoom 轮询线程
+        zoom_stop = _threading.Event()
+        zoom_thread = None
+        if zoom_monitor is not None:
+            zoom_thread = _threading.Thread(
+                target=_zoom_polling_worker,
+                args=(zoom_monitor, zoom_stop),
+                daemon=True,
+            )
+            zoom_thread.start()
 
         stats = InferenceStats(total_frames=0)
 
@@ -412,6 +553,10 @@ class RealTimeVideoDetector:
                     # 在原图上绘制检测框并显示，不写入任何 label 或图片文件
                     annotated_frame = result.plot(img=frame.copy())
 
+                    # 获取当前 zoom_step 并计算 F_DIV_SENSOR
+                    current_zoom = zoom_monitor.get_zoom() if zoom_monitor else None
+                    f_div_sensor = F_DIV_SENSOR_BY_ZOOM.get(current_zoom) if current_zoom else None
+
                     # 单目测距：在检测框下方显示距离
                     if result.boxes is not None and len(result.boxes) > 0:
                         img_height = frame.shape[0]
@@ -428,8 +573,8 @@ class RealTimeVideoDetector:
                             target_px = max(box_width_px, box_height_px)
                             target_size = TARGET_SIZE_MM_BY_LABEL.get(cls_name, TARGET_SIZE_MM)
 
-                            if target_px > 0:
-                                distance_mm = F_DIV_SENSOR * target_size * img_height / target_px
+                            if target_px > 0 and f_div_sensor is not None:
+                                distance_mm = f_div_sensor * target_size * img_height / target_px
                                 distance_m = distance_mm / 1000.0
 
                                 text = f"{distance_m:.2f}m"
@@ -445,6 +590,14 @@ class RealTimeVideoDetector:
                                     2,
                                     cv2.LINE_AA,
                                 )
+
+                    # 左上角显示 zoom_step 和 F_DIV_SENSOR
+                    zoom_text = f"zoom={current_zoom}" if current_zoom else "zoom=N/A"
+                    fdiv_text = f"F_DIV={f_div_sensor:.4f}" if f_div_sensor else "F_DIV=N/A"
+                    cv2.putText(annotated_frame, zoom_text, (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
+                    cv2.putText(annotated_frame, fdiv_text, (10, 60),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
 
                     # 二级关键点检测：仅对指定类别进行扣图并回填关键点到原图
                     pose_detections = self.pose_detector.run_on_frame(
@@ -468,7 +621,8 @@ class RealTimeVideoDetector:
                     stats.failed_frames += 1
                     print(f"[失败] 第 {frame_index} 帧: {exc}")
                 finally:
-                    progress.update(1)
+                    #progress.update(1)
+                    pass
 
                 elapsed = time.perf_counter() - last_show_time
                 remain = max(0.0, min_frame_interval - elapsed)
@@ -484,6 +638,9 @@ class RealTimeVideoDetector:
                     print(f"截图已保存: {save_path}")
                 last_show_time = time.perf_counter()
         finally:
+            zoom_stop.set()
+            if zoom_thread is not None:
+                zoom_thread.join(timeout=2.0)
             progress.close()
             capture.release()
             cv2.destroyAllWindows()
@@ -492,6 +649,15 @@ class RealTimeVideoDetector:
 
 
 def main() -> None:
+    # 启动 PTZ zoom_step 监控
+    zoom_monitor = ZoomStatusMonitor(
+        host=PTZ_HOST, port=PTZ_PORT,
+        username=PTZ_USERNAME, password=PTZ_PASSWORD,
+        channel=PTZ_CHANNEL,
+    )
+    zoom_monitor.login()
+    zoom_monitor.attach()
+
     detector = RealTimeVideoDetector(model_path=MODEL_PATH)
 
     stats = detector.infer_stream(
@@ -505,6 +671,7 @@ def main() -> None:
         quit_key=QUIT_KEY,
         display_scale=DISPLAY_SCALE,
         max_display_fps=MAX_DISPLAY_FPS,
+        zoom_monitor=zoom_monitor,
     )
 
     # 结果打印
@@ -514,6 +681,8 @@ def main() -> None:
     print(f"检测目标总框数: {stats.total_boxes}")
     print(f"RTSP 流地址: {RTSP_URL}")
     print("="*50)
+
+    zoom_monitor.cleanup()
 
 
 if __name__ == "__main__":

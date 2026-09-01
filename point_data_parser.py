@@ -72,10 +72,10 @@ def parse_readdata(src_points, anchors = DEFAULT_FRONT_VIEW_ANCHOR_POINTS, readi
     angle_anchor1 = clockwise_angle(anchor1_pt)
     # 读数顺时针递增，顺时针夹角 = (目标角度 - 参考角度) mod 360
     angle_between = (angle_kpt1 - angle_anchor1) % 360.0
-    print(f"index1映射点位角: {angle_kpt1:.2f}°, 0读数点角: {angle_anchor1:.2f}°, 顺时针夹角: {angle_between:.2f}°")
+    # print(f"index1映射点位角: {angle_kpt1:.2f}°, 0读数点角: {angle_anchor1:.2f}°, 顺时针夹角: {angle_between:.2f}°")
     
     # 根据角度计算读数
     readdata = angle_between/270.0 * (readings_np[-1] - readings_np[0]) + readings_np[0]
-    print(f"计算读数: {readdata:.2f}")
+    # print(f"计算读数: {readdata:.2f}")
 
     return float(readdata), H, mask, (float(needle_front[0]), float(needle_front[1]))
