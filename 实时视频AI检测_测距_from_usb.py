@@ -80,13 +80,30 @@ F_DIV_SENSOR = 2.1558  # 这个是实测得出的，与设置的 SENSOR_WIDTH_MM
 # F_DIV_SENSOR = 0.00530575 * zoom_absolute + 2.002825
 # print(f"zoom_absolute={zoom_absolute} F_DIV_SENSOR={F_DIV_SENSOR:.4f}")
 
-# zoom_absolute = 1000
-# a = 0.000000011972207
-# b = -0.000003031614821
-# c = 0.003370560513388
-# d = 2.124560067261915
-# S = 0.980469535452923
-# F_DIV_SENSOR = (a*zoom_absolute**3 + b*zoom_absolute**2 + c*zoom_absolute + d) / S 
+
+def calc_F_DIV_SENSOR(zoom_absolute):
+    """根据 zoom_absolute 计算 F_DIV_SENSOR
+
+    模型: F_DIV_SENSOR = (a*x^4 + b*x^3 + c*x^2 + d*x + e) / (f*x + g)
+    拟合精度: 最大百分比误差 2.20%, 平均百分比误差 1.78%
+
+    Args:
+        zoom_absolute: zoom 值 (int 或 float)
+
+    Returns:
+        F_DIV_SENSOR (float)
+    """
+    x = zoom_absolute
+    a = -4.627278708673889e-07
+    b = 7.922021815672910e-04
+    c = -4.070976976559604e-01
+    d = 9.597028438163902e+01
+    e = 6.528310033629125e+04
+    f = -2.580504450345611e+01
+    g = 3.103611152245023e+04
+    return (a*x**4 + b*x**3 + c*x**2 + d*x + e) / (f*x + g)
+
+F_DIV_SENSOR = calc_F_DIV_SENSOR(800) 
 # print(f"zoom_absolute={zoom_absolute} F_DIV_SENSOR={F_DIV_SENSOR:.4f}")
 
 WINDOW_NAME = "YOLO Real-time Detection"
