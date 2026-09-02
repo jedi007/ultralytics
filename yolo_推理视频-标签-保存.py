@@ -17,7 +17,7 @@ VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".ts", ".m4v
 # =========================
 MODEL_PATH = "weights/det_instrument_20260817.pt"
 # 支持传入单个视频文件 或 视频文件夹（自动扫描文件夹下所有视频）
-INPUT_VIDEO_PATH = "/data/采集数据/仪表/内江化工厂/锐尔威视录制"
+INPUT_VIDEO_PATH = "/data/采集数据/仪表/内江化工厂/大华云台录制"
 OUTPUT_ROOT_DIR = "/data/采集数据/仪表/内江化工厂/video_pred"
 # None means auto: save to OUTPUT_ROOT_DIR/classes.txt
 CLASSES_TXT_PATH = None
@@ -158,7 +158,7 @@ class VideoFrameLabelExporter:
 
                 frame_index += 1
                 file_prefix = self._get_file_prefix(video_stem, frame_index)
-                frame_path = frame_dir / f"{file_prefix}.bmp"
+                frame_path = frame_dir / f"{file_prefix}.jpg"
                 pred_path = pred_dir / f"{file_prefix}.jpg"
                 label_path = label_dir / f"{file_prefix}.txt"
 
@@ -198,14 +198,14 @@ class VideoFrameLabelExporter:
 
                     if not skip_save:
                         # 保存原图
-                        if not cv2.imwrite(str(frame_path), frame):
+                        if not cv2.imwrite(str(frame_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 100]):
                             raise RuntimeError(f"原始帧保存失败: {frame_path}")
                         # 写入YOLO标签
                         box_cnt = self._write_yolo_label(label_path, result, save_empty_label=save_empty_label)
                         stats.total_boxes += box_cnt
                         # 保存绘制效果图
                         annotated_frame = result.plot()
-                        if not cv2.imwrite(str(pred_path), annotated_frame):
+                        if not cv2.imwrite(str(pred_path), annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 100]):
                             raise RuntimeError(f"推理结果图保存失败: {pred_path}")
 
                     stats.success_frames += 1
