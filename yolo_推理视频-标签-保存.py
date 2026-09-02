@@ -9,19 +9,19 @@ import numpy as np
 from ultralytics import YOLO
 from ultralytics.utils import TQDM
 
+VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".ts", ".m4v", ".webm"}
+
 
 # =========================
 # Config (edit as needed)
 # =========================
-MODEL_PATH = "weights/det_instrument_20260807.pt"
-VIDEO_PATH = "/data/清洗cache/video/26-08-14/rtsp_record_2026-08-14-11-15-01.mp4"
-OUTPUT_ROOT_DIR = "/data/清洗cache/video/26-08-14/video_pred8"
-OUTPUT_FRAME_DIR = f"{OUTPUT_ROOT_DIR}/frames"
-OUTPUT_PRED_DIR = f"{OUTPUT_ROOT_DIR}/pred_frames"
-OUTPUT_LABEL_DIR = f"{OUTPUT_ROOT_DIR}/labels"
+MODEL_PATH = "weights/det_instrument_20260817.pt"
+# 支持传入单个视频文件 或 视频文件夹（自动扫描文件夹下所有视频）
+INPUT_VIDEO_PATH = "/data/采集数据/仪表/内江化工厂/锐尔威视录制"
+OUTPUT_ROOT_DIR = "/data/采集数据/仪表/内江化工厂/video_pred"
 # None means auto: save to OUTPUT_ROOT_DIR/classes.txt
 CLASSES_TXT_PATH = None
-CONF = 0.88
+CONF = 0.80
 IOU = 0.45
 IMGSZ = [384, 640]
 DEVICE = None
@@ -52,13 +52,11 @@ class InferenceStats:
 class VideoFrameLabelExporter:
     """Run inference on each video frame and save images plus YOLO-format labels."""
 
-    def __init__(self, model_path: str | Path = "det_person_helmet_250821.pt", video_file_stem: str = "") -> None:
+    def __init__(self, model_path: str | Path = "det_person_helmet_250821.pt") -> None:
         self.model_path = Path(model_path)
         if not self.model_path.exists():
             raise FileNotFoundError(f"模型文件不存在: {self.model_path}")
         self.model = YOLO(str(self.model_path))
-        self.video_stem = video_file_stem  # 视频文件名前缀
-        # 缓存参考帧直方图，用于相似度对比
         self.ref_frame_hist = None
 
     def export_classes_txt(self, output_path: str | Path) -> Path:
@@ -76,9 +74,9 @@ class VideoFrameLabelExporter:
         classes_path.write_text("\n".join(class_names) + "\n", encoding="utf-8")
         return classes_path
 
-    def _get_file_prefix(self, frame_index: int) -> str:
+    def _get_file_prefix(self, video_stem: str, frame_index: int) -> str:
         """生成文件名前缀：视频名_000001"""
-        return f"{self.video_stem}_{frame_index:06d}"
+        return f"{video_stem}_{frame_index:06d}"
 
     @staticmethod
     def _write_yolo_label(label_file: Path, result, save_empty_label: bool = True) -> int:
@@ -115,6 +113,7 @@ class VideoFrameLabelExporter:
         output_frame_dir: str | Path,
         output_pred_dir: str | Path,
         output_label_dir: str | Path,
+        video_stem: str = "",
         conf: float = 0.25,
         iou: float = 0.45,
         imgsz: list[int] = [384, 640],
@@ -158,7 +157,7 @@ class VideoFrameLabelExporter:
                     break
 
                 frame_index += 1
-                file_prefix = self._get_file_prefix(frame_index)
+                file_prefix = self._get_file_prefix(video_stem, frame_index)
                 frame_path = frame_dir / f"{file_prefix}.bmp"
                 pred_path = pred_dir / f"{file_prefix}.jpg"
                 label_path = label_dir / f"{file_prefix}.txt"
@@ -227,47 +226,75 @@ class VideoFrameLabelExporter:
         return stats
 
 
+def collect_video_files(input_path: str | Path) -> list[Path]:
+    """扫描输入路径，返回所有视频文件列表（已排序）。"""
+    input_path = Path(input_path)
+    if input_path.is_file():
+        if input_path.suffix.lower() in VIDEO_EXTENSIONS:
+            return [input_path]
+        raise FileNotFoundError(f"文件不是支持的视频格式: {input_path}")
+    if input_path.is_dir():
+        videos = [f for f in sorted(input_path.iterdir()) if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS]
+        if not videos:
+            raise FileNotFoundError(f"文件夹内未找到视频文件: {input_path}")
+        return videos
+    raise FileNotFoundError(f"输入路径不存在: {input_path}")
+
+
 def main() -> None:
-    # 提取视频文件名（不带后缀）
-    video_path_obj = Path(VIDEO_PATH)
-    video_name_stem = video_path_obj.stem
-    exporter = VideoFrameLabelExporter(model_path=MODEL_PATH, video_file_stem=video_name_stem)
+    video_files = collect_video_files(INPUT_VIDEO_PATH)
+    print(f"共发现 {len(video_files)} 个视频文件待处理")
+
+    exporter = VideoFrameLabelExporter(model_path=MODEL_PATH)
 
     classes_txt_path = Path(CLASSES_TXT_PATH) if CLASSES_TXT_PATH else Path(OUTPUT_ROOT_DIR) / "classes.txt"
     exporter.export_classes_txt(classes_txt_path)
     print(f"类别文件已保存: {classes_txt_path}")
 
-    stats = exporter.infer_video(
-        video_path=VIDEO_PATH,
-        output_frame_dir=OUTPUT_FRAME_DIR,
-        output_pred_dir=OUTPUT_PRED_DIR,
-        output_label_dir=OUTPUT_LABEL_DIR,
-        conf=CONF,
-        iou=IOU,
-        imgsz=IMGSZ,
-        device=DEVICE,
-        save_empty_label=SAVE_EMPTY_LABEL,
-        save_mode=SAVE_MODE,
-        sim_threshold=FRAME_SIMILARITY_THRESHOLD,
-        sim_resize_w=RESIZE_SIMILARITY_W,
-        sim_resize_h=RESIZE_SIMILARITY_H,
-        hist_method=HIST_COMPARE_METHOD
-    )
-
-    # 结果打印
     mode_desc = {1: "仅保存有目标帧", 2: "仅保存空帧", 3: "保存全部帧"}
-    print("="*50)
-    print(f"总帧数: {stats.total_frames}")
-    print(f"画面相似跳过帧数: {stats.skip_similar_frames}")
-    print(f"有效推理成功帧: {stats.success_frames}")
-    print(f"推理失败帧: {stats.failed_frames}")
-    print(f"检测目标总框数: {stats.total_boxes}")
-    print(f"当前保存模式: {SAVE_MODE} - {mode_desc[SAVE_MODE]}")
-    print(f"相似度判定阈值: {FRAME_SIMILARITY_THRESHOLD}")
-    print(f"原始帧目录: {Path(OUTPUT_FRAME_DIR)}")
-    print(f"推理结果图目录: {Path(OUTPUT_PRED_DIR)}")
-    print(f"标签目录: {Path(OUTPUT_LABEL_DIR)}")
-    print("="*50)
+
+    for idx, video_file in enumerate(video_files, 1):
+        video_stem = video_file.stem
+        print(f"\n{'='*60}")
+        print(f"[{idx}/{len(video_files)}] 正在处理: {video_file.name}")
+        print(f"{'='*60}")
+
+        # 每个视频在 OUTPUT_ROOT_DIR 下创建以视频名命名的子文件夹
+        video_output_dir = Path(OUTPUT_ROOT_DIR) / video_stem
+        frame_dir = video_output_dir / "frames"
+        pred_dir = video_output_dir / "pred_frames"
+        label_dir = video_output_dir / "labels"
+
+        stats = exporter.infer_video(
+            video_path=video_file,
+            output_frame_dir=frame_dir,
+            output_pred_dir=pred_dir,
+            output_label_dir=label_dir,
+            video_stem=video_stem,
+            conf=CONF,
+            iou=IOU,
+            imgsz=IMGSZ,
+            device=DEVICE,
+            save_empty_label=SAVE_EMPTY_LABEL,
+            save_mode=SAVE_MODE,
+            sim_threshold=FRAME_SIMILARITY_THRESHOLD,
+            sim_resize_w=RESIZE_SIMILARITY_W,
+            sim_resize_h=RESIZE_SIMILARITY_H,
+            hist_method=HIST_COMPARE_METHOD,
+        )
+
+        print(f"总帧数: {stats.total_frames}")
+        print(f"画面相似跳过帧数: {stats.skip_similar_frames}")
+        print(f"有效推理成功帧: {stats.success_frames}")
+        print(f"推理失败帧: {stats.failed_frames}")
+        print(f"检测目标总框数: {stats.total_boxes}")
+        print(f"保存模式: {SAVE_MODE} - {mode_desc[SAVE_MODE]}")
+        print(f"输出目录: {video_output_dir}")
+
+    print(f"\n{'='*60}")
+    print(f"全部完成！共处理 {len(video_files)} 个视频")
+    print(f"输出根目录: {Path(OUTPUT_ROOT_DIR)}")
+    print(f"{'='*60}")
 
 
 if __name__ == "__main__":
