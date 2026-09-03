@@ -49,17 +49,20 @@ WINDOW_NAME = "YOLO Zoom Calibration"
 # Dahua PTZ zoom 控制
 # =========================
 class DahuaPtzZoomController:
-    """通过 Dahua NetSDK EXACTGOTO 设置/读取 zoom_step。"""
+    """通过 Dahua NetSDK EXACTGOTO 设置 zoom_step，AttachPTZStatusProc 读取。"""
 
     def __init__(self, host: str, port: int, username: str, password: str, channel: int) -> None:
-        from ctypes import sizeof
+        from ctypes import POINTER, cast, sizeof
         from NetSDK.NetSDK import NetClient
-        from NetSDK.SDK_Callback import fDisConnect, fHaveReConnect
+        from NetSDK.SDK_Callback import fDisConnect, fHaveReConnect, fPTZStatusProcCallBack
         from NetSDK.SDK_Enum import EM_LOGIN_SPAC_CAP_TYPE, SDK_PTZ_ControlType
         from NetSDK.SDK_Struct import (
             C_LLONG,
             NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY,
+            NET_IN_PTZ_STATUS_PROC,
             NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY,
+            NET_OUT_PTZ_STATUS_PROC,
+            SDK_PTZ_LOCATION_INFO,
         )
 
         self._SDK_PTZ_ControlType = SDK_PTZ_ControlType
@@ -67,6 +70,9 @@ class DahuaPtzZoomController:
         self._stu_in_type = NET_IN_LOGIN_WITH_HIGHLEVEL_SECURITY
         self._stu_out_type = NET_OUT_LOGIN_WITH_HIGHLEVEL_SECURITY
         self._sizeof = sizeof
+        self._cast = cast
+        self._POINTER = POINTER
+        self._SDK_PTZ_LOCATION_INFO = SDK_PTZ_LOCATION_INFO
         self.host = host
         self.port = port
         self.username = username
@@ -74,18 +80,30 @@ class DahuaPtzZoomController:
         self.channel = channel
 
         self.login_id = C_LLONG()
+        self.attach_handle = C_LLONG()
         self._disconnect_cb = fDisConnect(self._on_disconnect)
         self._reconnect_cb = fHaveReConnect(self._on_reconnect)
+        self._ptz_status_cb = fPTZStatusProcCallBack(self._on_ptz_status)
 
         self.sdk = NetClient()
         self.sdk.InitEx(self._disconnect_cb)
         self.sdk.SetAutoReconnect(self._reconnect_cb)
+
+        self._latest_zoom: int | None = None
+        self._latest_abs_zoom: int | None = None
 
     def _on_disconnect(self, lLoginID, pchDVRIP, nDVRPort, dwUser) -> None:
         print(f"[断线] {self.host}:{self.port}")
 
     def _on_reconnect(self, lLoginID, pchDVRIP, nDVRPort, dwUser) -> None:
         print(f"[重连] {self.host}:{self.port}")
+
+    def _on_ptz_status(self, lLoginID, lAttachHandle, pBuf, nBufLen, dwUser) -> None:
+        if not pBuf:
+            return
+        ptz_info = self._cast(pBuf, self._POINTER(self._SDK_PTZ_LOCATION_INFO)).contents
+        self._latest_zoom = ptz_info.nPTZZoom
+        self._latest_abs_zoom = ptz_info.stuAbsPosition.nZoom
 
     def login(self) -> None:
         stu_in = self._stu_in_type()
@@ -104,6 +122,25 @@ class DahuaPtzZoomController:
         if self.login_id == 0:
             raise RuntimeError(f"登录失败: {error_message}")
         print(f"PTZ 登录成功: {self.host}:{self.port}, 通道: {self.channel}")
+
+        # 订阅 PTZ 状态回调
+        from ctypes import sizeof
+        from NetSDK.SDK_Struct import NET_IN_PTZ_STATUS_PROC, NET_OUT_PTZ_STATUS_PROC
+
+        stu_in_proc = NET_IN_PTZ_STATUS_PROC()
+        stu_in_proc.dwSize = sizeof(NET_IN_PTZ_STATUS_PROC)
+        stu_in_proc.nChannel = self.channel
+        stu_in_proc.cbPTZStatusProc = self._ptz_status_cb
+        stu_in_proc.dwUser = 0
+
+        stu_out_proc = NET_OUT_PTZ_STATUS_PROC()
+        stu_out_proc.dwSize = sizeof(NET_OUT_PTZ_STATUS_PROC)
+
+        self.attach_handle = self.sdk.AttachPTZStatusProc(self.login_id, stu_in_proc, stu_out_proc, 5000)
+        if not self.attach_handle:
+            print(f"  AttachPTZStatusProc 失败: {self.sdk.GetLastErrorMessage()}")
+        else:
+            print(f"  AttachPTZStatusProc 成功")
 
     def set_zoom(self, zoom_step: int, pan: int = 0, tilt: int = 0) -> None:
         """EXACTGOTO: 设置绝对位置 (pan, tilt, zoom)。"""
@@ -124,29 +161,17 @@ class DahuaPtzZoomController:
         print(f"  EXACTGOTO: pan={pan} tilt={tilt} zoom={zoom_step}")
 
     def get_zoom(self) -> int | None:
-        """读取当前 zoom_step，失败返回 None。"""
-        try:
-            # 尝试通过 GetConfig 获取 PTZ 位置信息
-            # NET_SDK_CONFIG_TYPE_PTZ = 6 (部分 SDK 版本)
-            # 如果不支持则静默失败
-            import ctypes
-            buf = ctypes.create_string_buffer(1024)
-            ret = self.sdk.GetConfig(
-                self.login_id,
-                6,  # PTZ config type
-                buf,
-                1024,
-                None,
-            )
-            if ret:
-                # 简单解析：zoom 通常在结构体偏移位置
-                # 这里用一个保守的 fallback
-                pass
-        except Exception:
-            pass
-        return None
+        """从 AttachPTZStatusProc 回调获取当前 zoom_step。"""
+        return self._latest_zoom
+
+    def get_abs_zoom(self) -> int | None:
+        """从 AttachPTZStatusProc 回调获取当前 abs_zoom。"""
+        return self._latest_abs_zoom
 
     def cleanup(self) -> None:
+        if self.attach_handle:
+            self.sdk.DetachPTZStatusProc(self.attach_handle)
+            self.attach_handle = 0
         if self.login_id:
             self.sdk.Logout(self.login_id)
             self.login_id = 0
@@ -267,12 +292,13 @@ def main() -> None:
             print(f"  等待 {SETTLE_WAIT}s 机械稳定...")
             time.sleep(SETTLE_WAIT)
 
-            # 3. 验证 zoom (尽力读取)
+            # 3. 验证 zoom
             verified_zoom = ptz.get_zoom()
+            abs_zoom = ptz.get_abs_zoom()
             if verified_zoom is not None:
-                print(f"  验证 zoom_step: {verified_zoom}")
+                print(f"  验证 zoom_step: {verified_zoom}, abs_zoom: {abs_zoom}")
             else:
-                print(f"  (跳过验证，SDK 不支持读取 zoom)")
+                print(f"  (等待 PTZ 状态回调...)")
 
             # 4. 收集稳定帧，取检测框较小边平均值
             print(f"  采集 {STABLE_FRAMES} 帧检测数据...")
