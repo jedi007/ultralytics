@@ -12,7 +12,6 @@ import cv2
 
 from rd_latest_frame_capture import LatestFrameCapture
 from ultralytics import YOLO
-from 云台测距采集数据.F_DIV_SENSOR_list import F_DIV_SENSOR_BY_ZOOM
 
 
 # =========================
@@ -301,22 +300,7 @@ def main() -> None:
             else:
                 print(f"  (等待 PTZ 状态回调...)")
 
-            # 4. 获取 F_DIV_SENSOR 并计算距离
-            f_div_sensor = None
-            distance = None
-            if abs_zoom is not None and abs_zoom >= 100:
-                f_div_sensor = F_DIV_SENSOR_BY_ZOOM.get(abs_zoom)
-                if f_div_sensor is not None:
-                    # 距离 = F_DIV_SENSOR * 92 * 1080 / 1000 (单位: m)
-                    distance = f_div_sensor * 92 * 1080 / 1000
-                    print(f"  abs_zoom={abs_zoom}, F_DIV_SENSOR={f_div_sensor:.4f}, 距离={distance:.2f}m")
-                else:
-                    print(f"  abs_zoom={abs_zoom} 不在字典中")
-            else:
-                if abs_zoom is not None and abs_zoom < 100:
-                    print(f"  abs_zoom={abs_zoom} < 100, 跳过距离计算")
-
-            # 5. 收集稳定帧，取检测框较小边平均值
+            # 4. 收集稳定帧，取检测框较小边平均值
             print(f"  采集 {STABLE_FRAMES} 帧检测数据...")
             avg_smaller = collect_stable_detection(
                 model=model,
@@ -332,15 +316,11 @@ def main() -> None:
 
             if avg_smaller is not None:
                 record = f"zoom_step:{zoom} ==> abs_zoom:{abs_zoom} ==> {avg_smaller:.1f}"
-                if distance is not None:
-                    record += f" ==> distance:{distance:.2f}m"
                 print(f"  >>> {record}")
                 out_f.write(record + "\n")
                 out_f.flush()
             else:
                 record = f"zoom_step:{zoom} ==> abs_zoom:{abs_zoom} ==> 无检测"
-                if distance is not None:
-                    record += f" ==> distance:{distance:.2f}m"
                 print(f"  >>> {record}")
                 out_f.write(record + "\n")
                 out_f.flush()

@@ -95,6 +95,7 @@ class ZoomStatusMonitor:
         self.attach_handle = C_LLONG()
         self._lock = __import__("threading").Lock()
         self._zoom_step: int | None = None
+        self._abs_zoom: int | None = None
         self._last_valid_status: dict | None = None
 
         self.sdk = NetClient()
@@ -115,9 +116,11 @@ class ZoomStatusMonitor:
             return
         ptz_info = self._cast(pBuf, self._POINTER(self._SDK_PTZ_LOCATION_INFO)).contents
         zoom = ptz_info.nPTZZoom
+        abs_zoom = ptz_info.stuAbsPosition.nZoom
         if zoom > 0:
             with self._lock:
                 self._zoom_step = zoom
+                self._abs_zoom = abs_zoom
 
     def login(self) -> None:
         stu_in = self._NET_IN_LOGIN()
@@ -155,6 +158,10 @@ class ZoomStatusMonitor:
     def get_zoom(self) -> int | None:
         with self._lock:
             return self._zoom_step
+
+    def get_abs_zoom(self) -> int | None:
+        with self._lock:
+            return self._abs_zoom
 
     def cleanup(self) -> None:
         if self.attach_handle:
@@ -424,9 +431,12 @@ class RealTimeVideoDetector:
                     # 在原图上绘制检测框并显示，不写入任何 label 或图片文件
                     annotated_frame = result.plot(img=frame.copy())
 
-                    # 获取当前 zoom_step 并计算 F_DIV_SENSOR
+                    # 获取当前 abs_zoom 并计算 F_DIV_SENSOR
                     current_zoom = zoom_monitor.get_zoom() if zoom_monitor else None
-                    f_div_sensor = F_DIV_SENSOR_BY_ZOOM.get(current_zoom) if current_zoom else None
+                    abs_zoom = zoom_monitor.get_abs_zoom() if zoom_monitor else None
+                    f_div_sensor = None
+                    if abs_zoom is not None and abs_zoom >= 100:
+                        f_div_sensor = F_DIV_SENSOR_BY_ZOOM.get(abs_zoom)
 
                     # 单目测距：在检测框下方显示距离
                     if result.boxes is not None and len(result.boxes) > 0:
@@ -462,10 +472,10 @@ class RealTimeVideoDetector:
                                     cv2.LINE_AA,
                                 )
 
-                    # 左上角显示 zoom_step 和 F_DIV_SENSOR
-                    zoom_text = f"zoom={current_zoom}" if current_zoom else "zoom=N/A"
+                    # 左上角显示 abs_zoom 和 F_DIV_SENSOR
+                    abs_zoom_text = f"abs_zoom={abs_zoom}" if abs_zoom else "abs_zoom=N/A"
                     fdiv_text = f"F_DIV={f_div_sensor:.4f}" if f_div_sensor else "F_DIV=N/A"
-                    cv2.putText(annotated_frame, zoom_text, (10, 30),
+                    cv2.putText(annotated_frame, abs_zoom_text, (10, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
                     cv2.putText(annotated_frame, fdiv_text, (10, 60),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
