@@ -206,7 +206,7 @@ class DistanceDetector:
             cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
             # 标签
-            label = f"{box.cls_name} {box.conf:.2f}"
+            label = f"{box.cls_name} {box.confidence:.2f}"
             cv2.putText(annotated, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
             # 距离
