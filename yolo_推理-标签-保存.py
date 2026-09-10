@@ -11,13 +11,13 @@ from ultralytics.utils import TQDM
 # =========================
 # Config (edit as needed)
 # =========================
-MODEL_PATH = "det_smog_fire_250811.pt"
-INPUT_DIR = "/data/清洗cache/caiji/images"
-OUTPUT_LABEL_DIR = "/data/清洗cache/caiji/pred_labels"
+MODEL_PATH = "weights/det_instrument_20260817.pt"
+INPUT_DIR = "/data/清洗cache/识别误差/distance_images/images"
+OUTPUT_LABEL_DIR = "/data/清洗cache/识别误差/distance_images/images_pred_labels"
 # None means auto: save to OUTPUT_LABEL_DIR parent directory as classes.txt
-CLASSES_TXT_PATH = "/data/清洗cache/caiji/classes.txt"
-CONF = 0.25
-IOU = 0.45
+CLASSES_TXT_PATH = "/data/清洗cache/识别误差/distance_images/classes.txt"
+CONF = 0.35
+IOU = 0.5
 IMGSZ = [384, 640]
 DEVICE = None
 
