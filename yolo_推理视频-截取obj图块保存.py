@@ -13,9 +13,9 @@ from ultralytics.utils import TQDM
 # =========================
 # Config (edit as needed)
 # =========================
-MODEL_PATH = "weights/det_instrument_20260807.pt"
-VIDEO_PATH = "/data/清洗cache/video/26-08-14/已处理/rtsp_record_2026-08-14-11-02-19.mp4"
-OUTPUT_ROOT_DIR = "/data/清洗cache/video/26-08-14/video_pred6"
+MODEL_PATH = "weights/det_instrument_20260910.pt"
+VIDEO_PATH = "/data/采集数据/仪表/徐烨采集_0922/save_videos/rtsp_record_2026-09-22-14-27-49.mp4"
+OUTPUT_ROOT_DIR = "/data/采集数据/仪表/徐烨采集_0922/video_pred6"
 OUTPUT_OBJ_DIR = f"{OUTPUT_ROOT_DIR}/objects"
 
 # 目标过滤配置

@@ -15,14 +15,14 @@ VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".ts", ".m4v
 # =========================
 # Config (edit as needed)
 # =========================
-MODEL_PATH = "weights/det_instrument_20260817.pt"
+MODEL_PATH = "weights/det_instrument_20260910.pt"
 # 支持传入单个视频文件 或 视频文件夹（自动扫描文件夹下所有视频）
-INPUT_VIDEO_PATH = "/data/采集数据/仪表/内江化工厂/大华云台录制"
-OUTPUT_ROOT_DIR = "/data/采集数据/仪表/内江化工厂/video_pred"
+INPUT_VIDEO_PATH = "/data/采集数据/仪表/20261013_手机录制"
+OUTPUT_ROOT_DIR = "/data/采集数据/仪表/20261013_手机录制_pred"
 # None means auto: save to OUTPUT_ROOT_DIR/classes.txt
 CLASSES_TXT_PATH = None
-CONF = 0.80
-IOU = 0.45
+CONF = 0.88
+IOU = 0.35
 IMGSZ = [384, 640]
 DEVICE = None
 SAVE_EMPTY_LABEL = True

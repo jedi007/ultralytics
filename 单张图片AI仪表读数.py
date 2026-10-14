@@ -12,8 +12,8 @@ from ultralytics import YOLO
 # =========================
 # Config (edit as needed)
 # =========================
-MODEL_PATH = "weights/det_instrument_20260817.pt"
-IMAGE_PATH = "/data/清洗cache/识别误差/debug_nore_2026_08_26_17_37_36.jpg"  # 本地图片路径
+MODEL_PATH = "weights/det_instrument_20261013.pt"
+IMAGE_PATH = "/data/采集数据/仪表/20261013_手机拍摄测试/微信图片_20261014164735_41_102.jpg"  # 本地图片路径
 CONF = 0.55
 IOU = 0.45
 IMGSZ = [384, 640]
@@ -21,7 +21,7 @@ DEVICE = None
 WINDOW_NAME = "YOLO Detection Result"
 QUIT_KEY = "q"
 
-POSE_MODE_PATH = "weights/pose_instrument_m_260821_2.pt"
+POSE_MODE_PATH = "weights/pose_instrument_m_261014.pt"
 pose_cls_names = ["instrument"]
 READING_KPT_CONF = 0.2
 
