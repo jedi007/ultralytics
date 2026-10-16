@@ -92,6 +92,19 @@ class PoseTrainer(yolo.detect.DetectionTrainer):
             names = list(map(str, range(self.model.kpt_shape[0])))
             kpt_names = {i: names for i in range(self.model.nc)}
         self.model.kpt_names = kpt_names
+        # Optional per-keypoint loss weights, e.g. [1, 5, 1, ...] to emphasize the pointer (index 1)
+        kpt_weights = self.data.get("kpt_weights")
+        if kpt_weights is not None:
+            if len(kpt_weights) != self.model.kpt_shape[0]:
+                raise ValueError(
+                    f"kpt_weights must have {self.model.kpt_shape[0]} values to match "
+                    f"kpt_shape={self.model.kpt_shape}, but got {len(kpt_weights)}"
+                )
+            self.model.kpt_weights = kpt_weights
+        # Optional coefficient of the non-saturating recovery term for weighted keypoints
+        kpt_recover = self.data.get("kpt_recover")
+        if kpt_recover is not None:
+            self.model.kpt_recover = float(kpt_recover)
 
     def get_validator(self):
         """Return an instance of the PoseValidator class for validation."""

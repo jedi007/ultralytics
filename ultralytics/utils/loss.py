@@ -312,22 +312,44 @@ class BCEDiceLoss(nn.Module):
 
 
 class KeypointLoss(nn.Module):
-    """Criterion class for computing keypoint losses."""
+    """Criterion class for computing keypoint losses with optional per-keypoint weights."""
 
-    def __init__(self, sigmas: torch.Tensor) -> None:
-        """Initialize the KeypointLoss class with keypoint sigmas."""
+    def __init__(self, sigmas: torch.Tensor, weights: torch.Tensor | None = None, recover: float = 0.1) -> None:
+        """Initialize the KeypointLoss class with keypoint sigmas and optional per-keypoint weights.
+
+        Args:
+            sigmas (torch.Tensor): Per-keypoint sigma values for the OKS-style loss, shape (K,).
+            weights (torch.Tensor, optional): Per-keypoint loss weights, shape (K,). A weight greater than 1
+                emphasizes that keypoint (e.g. the pointer tip). None keeps the original unweighted behavior.
+            recover (float): Coefficient of an additional non-saturating distance term added for weighted
+                keypoints. The OKS loss 1-exp(-e) saturates to 1 for large errors, so its gradient vanishes and a
+                badly localized keypoint (e.g. the pointer) can get stuck; the extra term keeps pulling it back.
+        """
         super().__init__()
         self.sigmas = sigmas
+        self.weights = weights
+        self.recover = recover
 
     def forward(
         self, pred_kpts: torch.Tensor, gt_kpts: torch.Tensor, kpt_mask: torch.Tensor, area: torch.Tensor
     ) -> torch.Tensor:
         """Calculate keypoint loss factor and Euclidean distance loss for keypoints."""
         d = (pred_kpts[..., 0] - gt_kpts[..., 0]).pow(2) + (pred_kpts[..., 1] - gt_kpts[..., 1]).pow(2)
-        kpt_loss_factor = kpt_mask.shape[1] / (torch.sum(kpt_mask != 0, dim=1) + 1e-9)
         # e = d / (2 * (area * self.sigmas) ** 2 + 1e-9)  # from formula
         e = d / ((2 * self.sigmas).pow(2) * (area + 1e-9) * 2)  # from cocoeval
-        return (kpt_loss_factor.view(-1, 1) * ((1 - torch.exp(-e)) * kpt_mask)).mean()
+        loss = (1 - torch.exp(-e)) * kpt_mask
+        if self.weights is None:
+            kpt_loss_factor = kpt_mask.shape[1] / (torch.sum(kpt_mask != 0, dim=1) + 1e-9)
+            return (kpt_loss_factor.view(-1, 1) * loss).mean()
+        # Weighted per-instance mean over visible keypoints (identical to the unweighted case when weights are all 1)
+        weights = self.weights.view(1, -1)
+        loss = loss * weights
+        if self.recover > 0:
+            # Non-saturating term (proportional to normalized squared distance) for weighted keypoints only
+            excess = (weights - 1).clamp(min=0)
+            loss = loss + excess * self.recover * e * kpt_mask
+        kpt_loss_factor = kpt_mask.shape[1] / (torch.sum(kpt_mask * weights, dim=1) + 1e-9)
+        return (kpt_loss_factor.view(-1, 1) * loss).mean()
 
 
 class v8DetectionLoss:
@@ -645,7 +667,18 @@ class v8PoseLoss(v8DetectionLoss):
         is_pose = self.kpt_shape == [17, 3]
         nkpt = self.kpt_shape[0]  # number of keypoints
         sigmas = torch.from_numpy(OKS_SIGMA).to(self.device) if is_pose else torch.ones(nkpt, device=self.device) / nkpt
-        self.keypoint_loss = KeypointLoss(sigmas=sigmas)
+        # Optional per-keypoint loss weights (e.g. emphasize the pointer tip), configured via `kpt_weights` in data yaml
+        self.kpt_weights = getattr(model, "kpt_weights", None)
+        if self.kpt_weights is not None:
+            self.kpt_weights = torch.as_tensor(self.kpt_weights, dtype=torch.float32, device=self.device).view(-1)
+            if self.kpt_weights.numel() != nkpt:
+                raise ValueError(
+                    f"kpt_weights must have {nkpt} values to match kpt_shape={self.kpt_shape}, "
+                    f"but got {self.kpt_weights.numel()}"
+                )
+        self.keypoint_loss = KeypointLoss(
+            sigmas=sigmas, weights=self.kpt_weights, recover=getattr(model, "kpt_recover", 0.1)
+        )
 
     def loss(self, preds: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         """Calculate the total loss and detach it for pose estimation."""
@@ -807,6 +840,9 @@ class PoseLoss26(v8PoseLoss):
             self.target_weights = (
                 torch.from_numpy(RLE_WEIGHT).to(self.device) if is_pose else torch.ones(nkpt, device=self.device)
             )
+            if self.kpt_weights is not None:
+                # RLE loss contains a non-saturating |error| term, weighting it helps recover badly-localized keypoints
+                self.target_weights = self.target_weights.float() * self.kpt_weights
 
     def loss(self, preds: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         """Calculate the total loss and detach it for pose estimation."""

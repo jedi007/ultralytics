@@ -100,10 +100,10 @@ warmup_epochs: 3.0 # (float) warmup epochs (fractions allowed)
 warmup_momentum: 0.8 # (float) initial momentum during warmup
 warmup_bias_lr: 0.1 # (float) bias learning rate during warmup
 box: 1.5 # (float) box loss gain
-cls: 0.5 # (float) classification loss gain
+cls: 1.5 # (float) classification loss gain
 cls_pw: 0.0 # (float) class weights power for handling class imbalance (0.0=disable, 1.0=full inverse frequency)
 dfl: 1.5 # (float) distribution focal loss gain
-pose: 20.0 # (float) pose loss gain (pose tasks)
+pose: 25.0 # (float) pose loss gain (pose tasks)
 kobj: 1.2 # (float) keypoint objectness loss gain (pose tasks)
 rle: 1.0 # (float) rle loss gain (pose tasks)
 angle: 1.0 # (float) oriented angle loss gain (obb tasks)
@@ -119,7 +119,7 @@ perspective: 0.001 # (float) perspective fraction (0–0.001 typical)
 flipud: 0.0 # (float) vertical flip probability
 fliplr: 0.0 # (float) horizontal flip probability
 bgr: 0.0 # (float) RGB↔BGR channel swap probability
-mosaic: 1.0 # (float) mosaic augmentation probability
+mosaic: 0.2 # (float) mosaic augmentation probability
 mixup: 0.0 # (float) MixUp augmentation probability
 cutmix: 0.0 # (float) CutMix augmentation probability
 copy_paste: 0.0 # (float) segmentation copy-paste probability

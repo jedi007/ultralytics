@@ -1,0 +1,65 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# COCO8-pose dataset (first 8 images from COCO train2017) by Ultralytics
+# Documentation: https://docs.ultralytics.com/datasets/pose/coco8-pose/
+# Example usage: yolo train data=coco8-pose.yaml
+# parent
+# ├── ultralytics
+# └── datasets
+#     └── coco8-pose ← downloads here (1 MB)
+
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+path: /data/清洗cache/仪表读数_多分类关键点 # dataset root dir
+train: train # train images (relative to 'path') 4 images
+val: train # val images (relative to 'path') 4 images
+test: # test images (optional)
+
+# Keypoints
+kpt_shape: [9, 3] # number of keypoints, number of dims (2 for x,y or 3 for x,y,visible)
+flip_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+
+# Classes
+names:
+  0: instrument_pointer
+  1: instrument_pointer_5
+  2: instrument_pointer_7
+
+# Keypoint loss weights per index (index 1 = pointer tip, index 0 = dial center, index 2+ = scale points)
+kpt_weights: [1.0, 5.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+# Non-saturating recovery term coefficient applied to weighted keypoints (0 disables it)
+kpt_recover: 0.1
+
+# Keypoint names per class
+kpt_names:
+  0:
+    - center
+    - pointer
+    - value_0
+    - value_20
+    - value_40
+    - value_60
+    - value_80
+    - value_100
+    - None
+  1:
+    - center
+    - pointer
+    - value_0
+    - value_1/4
+    - value_3/4
+    - value_3/4
+    - value_4/4
+    - None
+    - None
+  2:
+    - center
+    - pointer
+    - value_0
+    - value_1/6
+    - value_2/6
+    - value_3/6
+    - value_4/6
+    - value_5/6
+    - value_6/6
+
+
