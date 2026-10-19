@@ -105,6 +105,9 @@ class PoseTrainer(yolo.detect.DetectionTrainer):
         kpt_recover = self.data.get("kpt_recover")
         if kpt_recover is not None:
             self.model.kpt_recover = float(kpt_recover)
+        kpt_fine = self.data.get("kpt_fine")
+        if kpt_fine is not None:
+            self.model.kpt_fine = float(kpt_fine)
 
     def get_validator(self):
         """Return an instance of the PoseValidator class for validation."""

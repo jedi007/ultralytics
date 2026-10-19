@@ -28,6 +28,8 @@ names:
 kpt_weights: [1.0, 5.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 # Non-saturating recovery term coefficient applied to weighted keypoints (0 disables it)
 kpt_recover: 0.1
+# Global non-saturating term coefficient applied to every keypoint (0 disables it), for pixel-precision refinement
+kpt_fine: 0.1
 
 # Keypoint names per class
 kpt_names:
