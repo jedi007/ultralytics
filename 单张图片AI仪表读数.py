@@ -22,7 +22,7 @@ DEVICE = None
 WINDOW_NAME = "YOLO Detection Result"
 QUIT_KEY = "q"
 
-POSE_MODE_PATH = "weights/pose_instrument_m_261016_mulit_e163.pt"
+POSE_MODE_PATH = "weights/pose_instrument_m_261016_mulit.pt"
 pose_cls_names = ["instrument"]
 READING_KPT_CONF = 0.2
 
