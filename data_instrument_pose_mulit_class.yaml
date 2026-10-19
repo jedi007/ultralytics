@@ -24,11 +24,11 @@ names:
   1: instrument_pointer_5
   2: instrument_pointer_7
 
-# Keypoint loss weights per index (index 1 = pointer tip, index 0 = dial center, index 2+ = scale points)
+# 每个关键点的损失权重（索引 1=指针尖端，0=表盘中心，2 及以上=刻度点）
 kpt_weights: [1.0, 5.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-# Non-saturating recovery term coefficient applied to weighted keypoints (0 disables it)
+# 仅对 kpt_weights > 1 的关键点生效：实际系数为 (weight-1)*kpt_recover，OKS 损失饱和后仍持续拉回大误差关键点（0=关闭）
 kpt_recover: 0.1
-# Global non-saturating term coefficient applied to every keypoint (0 disables it), for pixel-precision refinement
+# 对所有可见关键点生效：每个点额外加 kpt_fine*e，与权重无关，用于精细压低像素误差（0=关闭）
 kpt_fine: 0.1
 
 # Keypoint names per class
