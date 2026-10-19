@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
 
-from point_data_parser import DEFAULT_FRONT_VIEW_RADIUS, parse_readdata
+from point_data_parser import parse_readdata
 from ultralytics import YOLO
 
 
@@ -22,7 +21,7 @@ DEVICE = None
 WINDOW_NAME = "YOLO Detection Result"
 QUIT_KEY = "q"
 
-POSE_MODE_PATH = "weights/pose_instrument_m_261016_mulit.pt"
+POSE_MODE_PATH = "weights/pose_instrument_m_mulit_20261019.pt"
 pose_cls_names = ["instrument"]
 READING_KPT_CONF = 0.2
 
@@ -33,28 +32,36 @@ CLASS_SCALE_READINGS: dict[int, list[float]] = {
     1: [0, 25, 50, 75, 100],
     2: [0, 100 / 6, 100 / 3, 50, 200 / 3, 250 / 3, 100],
 }
-FRONT_VIEW_RADIUS = DEFAULT_FRONT_VIEW_RADIUS
-FRONT_VIEW_START_ANGLE = 135.0
-FRONT_VIEW_SWEEP_ANGLE = 270.0
 
-
-def _build_front_view_anchors(num_scale_points: int) -> list[tuple[float, float]]:
-    """按刻度点数量生成正视图锚点: index0=圆心, 其余为0读数到满量程均匀分布的刻度点。"""
-    step = FRONT_VIEW_SWEEP_ANGLE / (num_scale_points - 1)
-    anchors = [(FRONT_VIEW_RADIUS, FRONT_VIEW_RADIUS)]
-    for i in range(num_scale_points):
-        angle = math.radians(FRONT_VIEW_START_ANGLE + i * step)
-        anchors.append(
-            (
-                FRONT_VIEW_RADIUS * (1.0 + math.cos(angle)),
-                FRONT_VIEW_RADIUS * (1.0 + math.sin(angle)),
-            )
-        )
-    return anchors
-
-
-CLASS_FRONT_VIEW_ANCHORS: dict[int, list[tuple[float, float]]] = {
-    cls_id: _build_front_view_anchors(len(readings)) for cls_id, readings in CLASS_SCALE_READINGS.items()
+# 各分类(cls_id)对应的正视图锚点，坐标直接写死，不再按角度计算
+CLASS_FRONT_VIEW_ANCHORS: dict[int, list[list[float]]] = {
+    0: [
+        [256.0, 256.0],
+        [74.980664, 437.019336],
+        [3.151785, 215.952777],
+        [139.778432, 27.902330],
+        [372.221568, 27.902330],
+        [508.848215, 215.952777],
+        [437.019336, 437.019336],
+    ],
+    1: [
+        [256.0, 256.0],
+        [74.980664, 437.019336],
+        [19.486840, 158.033041],
+        [256.0, 0.0],
+        [492.513160, 158.033041],
+        [437.019336, 437.019336],
+    ],
+    2: [
+        [256.0, 256.0],
+        [74.980664, 437.019336],
+        [0.0, 256.0],
+        [74.980664, 74.980664],
+        [256.0, 0.0],
+        [437.019336, 74.980664],
+        [512.0, 256.0],
+        [437.019336, 437.019336],
+    ],
 }
 
 
