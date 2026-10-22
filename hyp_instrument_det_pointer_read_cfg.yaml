@@ -9,27 +9,27 @@ mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmar
 # Train settings -------------------------------------------------------------------------------------------------------
 model: # (str, optional) path to model file, i.e. yolov8n.pt or yolov8n.yaml
 data: # (str, optional) path to data file, i.e. coco8.yaml
-epochs: 10 # (int) number of epochs to train for
+epochs: 100 # (int) number of epochs to train for
 time: # (float, optional) max hours to train; overrides epochs if set
-patience: 100 # (int) early stop after N epochs without val improvement
-batch: 8 # (int | float) batch size as int (e.g. 16), or float 0.0–1.0 for AutoBatch fraction of GPU memory
+patience: 30 # (int) early stop after N epochs without val improvement
+batch: 64 # (int | float) batch size as int (e.g. 16), or float 0.0–1.0 for AutoBatch fraction of GPU memory
 imgsz: [640, 640] # (int | list) train/val use int (square); predict/export may use [h,w]
 save: True # (bool) save train checkpoints and predict results
 save_period: 1 # (int) save checkpoint every N epochs; disabled if < 1
 cache: False # (bool | str) cache images in RAM (True/'ram') or on 'disk' to speed dataloading; False disables
 device: # (int | str | list) device: 0 or [0,1,2,3] for CUDA, 'cpu'/'mps', or -1/[-1,-1] to auto-select idle GPUs
-workers: 4 # (int) dataloader workers (per RANK if DDP)
+workers: 16 # (int) dataloader workers (per RANK if DDP)
 project: # (str, optional) project name for results root
 name: # (str, optional) experiment name; results in 'project/name'
 exist_ok: False # (bool) overwrite existing 'project/name' if True
 pretrained: True # (bool | str) use pretrained weights (bool) or load weights from path (str)
-optimizer: auto # (str) optimizer: SGD, MuSGD, Adam, Adamax, AdamW, NAdam, RAdam, RMSProp, or auto
+optimizer: MuSGD # (str) optimizer: SGD, MuSGD, Adam, Adamax, AdamW, NAdam, RAdam, RMSProp, or auto
 verbose: True # (bool) print verbose logs during training/val
 seed: 0 # (int) random seed for reproducibility
 deterministic: True # (bool) enable deterministic ops; reproducible but may be slower
 single_cls: False # (bool) treat all classes as a single class
 rect: False # (bool) rectangular batches for train; rectangular batching for val when mode='val'
-cos_lr: False # (bool) cosine learning rate scheduler
+cos_lr: True # (bool) cosine learning rate scheduler
 close_mosaic: 10 # (int) disable mosaic augmentation for final N epochs (0 to keep enabled)
 resume: False # (bool) resume training from last checkpoint in the run dir
 amp: True # (bool) Automatic Mixed Precision (AMP) training; True runs AMP capability check
@@ -93,12 +93,12 @@ nms: False # (bool) fuse NMS into exported model when backend supports; if True,
 
 # Hyperparameters ------------------------------------------------------------------------------------------------------
 lr0: 0.01 # (float) initial learning rate (SGD=1e-2, Adam/AdamW=1e-3)
-lrf: 0.01 # (float) final LR fraction; final LR = lr0 * lrf
+lrf: 0.0002 # (float) final LR fraction; final LR = lr0 * lrf
 momentum: 0.937 # (float) SGD momentum or Adam beta1
 weight_decay: 0.0005 # (float) weight decay (L2 regularization)
 warmup_epochs: 3.0 # (float) warmup epochs (fractions allowed)
 warmup_momentum: 0.8 # (float) initial momentum during warmup
-warmup_bias_lr: 0.1 # (float) bias learning rate during warmup
+warmup_bias_lr: 0.0 # (float) bias learning rate during warmup
 box: 7.5 # (float) box loss gain
 cls: 0.5 # (float) classification loss gain
 cls_pw: 0.0 # (float) class weights power for handling class imbalance (0.0=disable, 1.0=full inverse frequency)
@@ -111,11 +111,11 @@ nbs: 64 # (int) nominal batch size used for loss normalization
 hsv_h: 0.015 # (float) HSV hue augmentation fraction
 hsv_s: 0.7 # (float) HSV saturation augmentation fraction
 hsv_v: 0.4 # (float) HSV value (brightness) augmentation fraction
-degrees: 15.0 # (float) rotation degrees (+/-)
+degrees: 0.0 # (float) rotation degrees (+/-)
 translate: 0.1 # (float) translation fraction (+/-)
 scale: 0.5 # (float) scale gain (+/-)
 shear: 0.0 # (float) shear degrees (+/-)
-perspective: 0.0005 # (float) perspective fraction (0–0.001 typical)
+perspective: 0.0002 # (float) perspective fraction (0–0.001 typical)
 flipud: 0.0 # (float) vertical flip probability
 fliplr: 0.0 # (float) horizontal flip probability
 bgr: 0.0 # (float) RGB↔BGR channel swap probability
