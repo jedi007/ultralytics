@@ -8,8 +8,8 @@ import numpy as np
 from ultralytics import YOLO
 
 
-DEFAULT_MODEL_PATH = "pose_instrument_m20260602_2.pt"
-DEFAULT_IMAGE_PATH = "test_images/2_debug_panel_crop_742.jpg"
+DEFAULT_MODEL_PATH = "weights/pose_instrument_m_mulit_20261019.pt"
+DEFAULT_IMAGE_PATH = "test_images/2026_09_29_17_44_24_debug_retry_no_target_round0_initial_0_0.jpg"
 DEFAULT_OUTPUT_DIR = "runs/pose_demo"
 DEFAULT_CONF = 0.01
 DEFAULT_IMGSZ = 512
