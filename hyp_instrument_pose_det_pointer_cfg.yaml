@@ -118,7 +118,7 @@ shear: 0.0 # (float) 剪切角度（+/-）
 perspective: 0.0001 # (float) 透视比例（通常 0–0.001）
 flipud: 0.0 # (float) 垂直翻转概率
 fliplr: 0.0 # (float) 水平翻转概率
-bgr: 0.0 # (float) RGB↔BGR 通道交换概率
+bgr: 0.2 # (float) RGB↔BGR 通道交换概率
 mosaic: 1.0 # (float) mosaic 增强概率
 mixup: 0.0 # (float) MixUp 增强概率
 cutmix: 0.0 # (float) CutMix 增强概率
