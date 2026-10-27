@@ -102,11 +102,11 @@ warmup_bias_lr: 0.1 # (float) 预热期间的偏置学习率
 box: 7.5 # (float) 边界框损失增益
 cls: 1.5 # (float) 分类损失增益
 cls_pw: 0.0 # (float) 用于处理类别不平衡的类别权重幂（0.0=禁用，1.0=完全逆频率）
-dfl: 1.5 # (float) 分布焦点损失增益
+dfl: 2.5 # (float) 分布焦点损失增益
 pose: 10.0 # (float) 姿态损失增益（pose 任务）
 kobj: 1.0 # (float) 关键点目标性损失增益（pose 任务）
 rle: 1.0 # (float) RLE 损失增益（pose 任务）
-kpt_l1: 0.05 # (float) 像素级 L1 关键点损失增益（pose 任务）
+kpt_l1: 0.01 # (float) 像素级 L1 关键点损失增益（pose 任务）
 kpt_l2: 0.0 # (float) 像素级 L2 关键点损失增益（pose 任务）
 angle: 1.0 # (float) 有向角度损失增益（obb 任务）
 nbs: 64 # (int) 用于损失归一化的名义批次大小
@@ -115,13 +115,13 @@ hsv_s: 0.7 # (float) HSV 饱和度增强比例
 hsv_v: 0.4 # (float) HSV 明度（亮度）增强比例
 degrees: 15.0 # (float) 旋转角度（+/-）
 translate: 0.1 # (float) 平移比例（+/-）
-scale: 0.5 # (float) 缩放增益（+/-）
+scale: 0.3 # (float) 缩放增益（+/-）
 shear: 0.0 # (float) 剪切角度（+/-）
 perspective: 0.0001 # (float) 透视比例（通常 0–0.001）
 flipud: 0.0 # (float) 垂直翻转概率
 fliplr: 0.0 # (float) 水平翻转概率
 bgr: 0.2 # (float) RGB↔BGR 通道交换概率
-mosaic: 1.0 # (float) mosaic 增强概率
+mosaic: 0.5 # (float) mosaic 增强概率
 mixup: 0.0 # (float) MixUp 增强概率
 cutmix: 0.0 # (float) CutMix 增强概率
 copy_paste: 0.0 # (float) 分割复制粘贴概率
