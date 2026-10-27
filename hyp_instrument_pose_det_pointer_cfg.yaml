@@ -103,9 +103,11 @@ box: 7.5 # (float) 边界框损失增益
 cls: 1.5 # (float) 分类损失增益
 cls_pw: 0.0 # (float) 用于处理类别不平衡的类别权重幂（0.0=禁用，1.0=完全逆频率）
 dfl: 1.5 # (float) 分布焦点损失增益
-pose: 12.0 # (float) 姿态损失增益（pose 任务）
+pose: 10.0 # (float) 姿态损失增益（pose 任务）
 kobj: 1.0 # (float) 关键点目标性损失增益（pose 任务）
 rle: 1.0 # (float) RLE 损失增益（pose 任务）
+kpt_l1: 0.05 # (float) 像素级 L1 关键点损失增益（pose 任务）
+kpt_l2: 0.0 # (float) 像素级 L2 关键点损失增益（pose 任务）
 angle: 1.0 # (float) 有向角度损失增益（obb 任务）
 nbs: 64 # (int) 用于损失归一化的名义批次大小
 hsv_h: 0.015 # (float) HSV 色调增强比例

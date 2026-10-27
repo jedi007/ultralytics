@@ -350,6 +350,20 @@ class KeypointLoss(nn.Module):
         e = d / ((2 * self.sigmas).pow(2) * (area + 1e-9) * 2)  # from cocoeval
         return (kpt_loss_factor.view(-1, 1) * ((1 - torch.exp(-e)) * kpt_mask)).mean()
 
+    def pixel_loss(
+        self,
+        pred_kpts: torch.Tensor,
+        gt_kpts: torch.Tensor,
+        kpt_mask: torch.Tensor,
+        stride: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return mean pixel-space L1 and L2 keypoint losses over visible keypoints."""
+        d = (pred_kpts[..., 0] - gt_kpts[..., 0]).pow(2) + (pred_kpts[..., 1] - gt_kpts[..., 1]).pow(2)
+        n = kpt_mask.sum().clamp(min=1)
+        l1 = ((d + 1e-9).sqrt() * stride * kpt_mask).sum() / n
+        l2 = (d * stride.pow(2) * kpt_mask).sum() / n
+        return l1, l2
+
 
 class v8DetectionLoss:
     """Criterion class for computing training losses for YOLOv8 object detection."""
@@ -684,7 +698,14 @@ class v8PoseLoss(v8DetectionLoss):
     ):  # model must be de-paralleled
         """Initialize v8PoseLoss with model parameters and keypoint-specific loss functions."""
         super().__init__(model, tal_topk, tal_topk2)
-        self.loss_names = ("box_loss", "pose_loss", "kobj_loss", *self.loss_names[1:])
+        self.loss_names = (
+            "box_loss",
+            "pose_loss",
+            "kobj_loss",
+            *self.loss_names[1:],
+            "kpt_l1_loss",
+            "kpt_l2_loss",
+        )
         self.kpt_shape = model.model[-1].kpt_shape
         self.bce_pose = nn.BCEWithLogitsLoss()
         is_pose = self.kpt_shape == [17, 3]
@@ -707,7 +728,7 @@ class v8PoseLoss(v8DetectionLoss):
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Calculate the total loss and detach it for pose estimation."""
         pred_kpts = preds["kpts"].permute(0, 2, 1).contiguous()
-        loss = torch.zeros(5, device=self.device)  # box, kpt_location, kpt_visibility, cls, dfl
+        loss = torch.zeros(7, device=self.device)  # box, kpt_location, kpt_visibility, cls, dfl, kpt_l1, kpt_l2
         (fg_mask, target_gt_idx, target_bboxes, anchor_points, stride_tensor), det_loss, _ = (
             self.get_assigned_targets_and_loss(preds, batch)
         )
@@ -722,7 +743,7 @@ class v8PoseLoss(v8DetectionLoss):
 
         # Keypoint loss
         if fg_mask.sum():
-            loss[1], loss[2] = self.calculate_keypoints_loss(
+            loss[1], loss[2], loss[5], loss[6] = self.calculate_keypoints_loss(
                 fg_mask,
                 target_gt_idx,
                 self._batch_keypoints(batch, batch_size, imgsz),
@@ -736,8 +757,10 @@ class v8PoseLoss(v8DetectionLoss):
 
         loss[1] *= self.hyp.pose  # pose gain
         loss[2] *= self.hyp.kobj  # kobj gain
+        loss[5] *= self.hyp.kpt_l1  # pixel L1 gain
+        loss[6] *= self.hyp.kpt_l2  # pixel L2 gain
 
-        return loss * batch_size, dict(zip(self.loss_names, loss.detach()))  # loss(box, pose, kobj, cls, dfl)
+        return loss * batch_size, dict(zip(self.loss_names, loss.detach()))  # loss(box, pose, kobj, cls, dfl, l1, l2)
 
     @staticmethod
     def kpts_decode(anchor_points: torch.Tensor, pred_kpts: torch.Tensor) -> torch.Tensor:
@@ -769,12 +792,14 @@ class v8PoseLoss(v8DetectionLoss):
         stride_tensor: torch.Tensor,
         target_bboxes: torch.Tensor,
         pred_kpts: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Calculate the keypoints loss for the model.
 
-        This function calculates the keypoints loss and keypoints object loss for a given batch. The keypoints loss is
-        based on the difference between the predicted keypoints and ground truth keypoints. The keypoints object loss is
-        a binary classification loss that classifies whether a keypoint is present or not.
+        This function calculates the keypoints loss, keypoints object loss, and pixel-space L1/L2 losses for a given
+        batch. The keypoints loss is based on the difference between the predicted keypoints and ground truth
+        keypoints. The keypoints object loss is a binary classification loss that classifies whether a keypoint is
+        present or not. The pixel losses are not normalized by box area, so they keep penalizing absolute pixel errors
+        on large objects.
 
         Args:
             masks (torch.Tensor): Binary mask tensor indicating object presence, shape (BS, N_anchors).
@@ -788,23 +813,29 @@ class v8PoseLoss(v8DetectionLoss):
         Returns:
             kpts_loss (torch.Tensor): The keypoints loss.
             kpts_obj_loss (torch.Tensor): The keypoints object loss.
+            kpt_l1_loss (torch.Tensor): The pixel-space L1 keypoint loss.
+            kpt_l2_loss (torch.Tensor): The pixel-space L2 keypoint loss.
         """
         kpts_loss = 0
         kpts_obj_loss = 0
+        kpt_l1_loss = 0
+        kpt_l2_loss = 0
 
         if masks.any():
             target_bboxes /= stride_tensor
+            stride = stride_tensor.view(1, -1).expand(masks.shape[0], -1)[masks][:, None]  # (P, 1)
             gt_kpt = keypoints[masks.nonzero(as_tuple=True)[0], target_gt_idx[masks]]
-            gt_kpt[..., :2] /= stride_tensor.view(1, -1).expand(masks.shape[0], -1)[masks][:, None, None]
+            gt_kpt[..., :2] /= stride[:, :, None]
             area = xyxy2xywh(target_bboxes[masks])[:, 2:].prod(1, keepdim=True)
             pred_kpt = pred_kpts[masks]
             kpt_mask = gt_kpt[..., 2] != 0
             kpts_loss = self.keypoint_loss(pred_kpt, gt_kpt, kpt_mask, area)  # pose loss
+            kpt_l1_loss, kpt_l2_loss = self.keypoint_loss.pixel_loss(pred_kpt, gt_kpt, kpt_mask, stride)
 
             if pred_kpt.shape[-1] == 3:
                 kpts_obj_loss = self.bce_pose(pred_kpt[..., 2], kpt_mask.float())  # keypoint obj loss
 
-        return kpts_loss, kpts_obj_loss
+        return kpts_loss, kpts_obj_loss, kpt_l1_loss, kpt_l2_loss
 
 
 class PoseLoss26(v8PoseLoss):
@@ -834,8 +865,8 @@ class PoseLoss26(v8PoseLoss):
         """Calculate the total loss and detach it for pose estimation."""
         pred_kpts = preds["kpts"].permute(0, 2, 1).contiguous()
         loss = torch.zeros(
-            6 if self.rle_loss else 5, device=self.device
-        )  # box, kpt_location, kpt_visibility, cls, dfl[, rle]
+            8 if self.rle_loss else 7, device=self.device
+        )  # box, kpt_location, kpt_visibility, cls, dfl, kpt_l1, kpt_l2[, rle]
         anchor_points, stride_tensor = make_anchors(preds["feats"], self.stride, 0.5)
         batch_size = pred_kpts.shape[0]
         imgsz = torch.tensor(preds["feats"][0].shape[2:], device=self.device, dtype=pred_kpts.dtype) * self.stride[0]
@@ -859,22 +890,23 @@ class PoseLoss26(v8PoseLoss):
             keypoints_loss = self.calculate_keypoints_loss(
                 fg_mask, target_gt_idx, gt_kpts, stride_tensor, target_bboxes, pred_kpts
             )
-            loss[1] = keypoints_loss[0]
-            loss[2] = keypoints_loss[1]
+            loss[1], loss[2], loss[5], loss[6] = keypoints_loss[:4]
             if self.rle_loss is not None:
-                loss[5] = keypoints_loss[2]
+                loss[7] = keypoints_loss[4]
         # WARNING: lines below prevent Multi-GPU DDP 'unused gradient' PyTorch errors, do not remove
         else:
             loss[1] += pred_kpts[..., :0].sum()
             if self.rle_loss is not None:
-                loss[5] += self._rle_zero(pred_kpts)
+                loss[7] += self._rle_zero(pred_kpts)
 
         loss[1] *= self.hyp.pose  # pose gain
         loss[2] *= self.hyp.kobj  # kobj gain
+        loss[5] *= self.hyp.kpt_l1  # pixel L1 gain
+        loss[6] *= self.hyp.kpt_l2  # pixel L2 gain
         if self.rle_loss is not None:
-            loss[5] *= self.hyp.rle  # rle gain
+            loss[7] *= self.hyp.rle  # rle gain
 
-        # loss(box, kpt_location, kpt_visibility, cls, dfl[, rle])
+        # loss(box, kpt_location, kpt_visibility, cls, dfl, kpt_l1, kpt_l2[, rle])
         return loss * batch_size, dict(zip(self.loss_names, loss.detach()))
 
     @staticmethod
@@ -939,12 +971,14 @@ class PoseLoss26(v8PoseLoss):
         stride_tensor: torch.Tensor,
         target_bboxes: torch.Tensor,
         pred_kpts: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Calculate the keypoints loss for the model.
 
-        This function calculates the keypoints loss and keypoints object loss for a given batch. The keypoints loss is
-        based on the difference between the predicted keypoints and ground truth keypoints. The keypoints object loss is
-        a binary classification loss that classifies whether a keypoint is present or not.
+        This function calculates the keypoints loss, keypoints object loss, pixel-space L1/L2 losses, and RLE loss for a
+        given batch. The keypoints loss is based on the difference between the predicted keypoints and ground truth
+        keypoints. The keypoints object loss is a binary classification loss that classifies whether a keypoint is
+        present or not. The pixel losses are not normalized by box area, so they keep penalizing absolute pixel errors
+        on large objects.
 
         Args:
             masks (torch.Tensor): Binary mask tensor indicating object presence, shape (BS, N_anchors).
@@ -958,20 +992,26 @@ class PoseLoss26(v8PoseLoss):
         Returns:
             kpts_loss (torch.Tensor): The keypoints loss.
             kpts_obj_loss (torch.Tensor): The keypoints object loss.
+            kpt_l1_loss (torch.Tensor): The pixel-space L1 keypoint loss.
+            kpt_l2_loss (torch.Tensor): The pixel-space L2 keypoint loss.
             rle_loss (torch.Tensor): The RLE loss.
         """
         kpts_loss = 0
         kpts_obj_loss = 0
+        kpt_l1_loss = 0
+        kpt_l2_loss = 0
         rle_loss = 0
 
         if masks.any():
             target_bboxes /= stride_tensor
+            stride = stride_tensor.view(1, -1).expand(masks.shape[0], -1)[masks][:, None]  # (P, 1)
             gt_kpt = keypoints[masks.nonzero(as_tuple=True)[0], target_gt_idx[masks]]
-            gt_kpt[..., :2] /= stride_tensor.view(1, -1).expand(masks.shape[0], -1)[masks][:, None, None]
+            gt_kpt[..., :2] /= stride[:, :, None]
             area = xyxy2xywh(target_bboxes[masks])[:, 2:].prod(1, keepdim=True)
             pred_kpt = pred_kpts[masks]
             kpt_mask = gt_kpt[..., 2] != 0
             kpts_loss = self.keypoint_loss(pred_kpt, gt_kpt, kpt_mask, area)  # pose loss
+            kpt_l1_loss, kpt_l2_loss = self.keypoint_loss.pixel_loss(pred_kpt, gt_kpt, kpt_mask, stride)
 
             if self.rle_loss is not None and (pred_kpt.shape[-1] == 4 or pred_kpt.shape[-1] == 5):
                 rle_loss = self.calculate_rle_loss(pred_kpt, gt_kpt, kpt_mask)
@@ -979,7 +1019,7 @@ class PoseLoss26(v8PoseLoss):
             if pred_kpt.shape[-1] == 3 or pred_kpt.shape[-1] == 5:
                 kpts_obj_loss = self.bce_pose(pred_kpt[..., 2], kpt_mask.float())  # keypoint obj loss
 
-        return kpts_loss, kpts_obj_loss, rle_loss
+        return kpts_loss, kpts_obj_loss, kpt_l1_loss, kpt_l2_loss, rle_loss
 
 
 class v8ClassificationLoss:

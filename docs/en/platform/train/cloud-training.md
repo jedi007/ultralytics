@@ -92,7 +92,7 @@ Expand **Advanced Settings** to access the YAML-based parameter editor with 50+ 
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Learning Rate**           | lr0, lrf, momentum, weight_decay, warmup_epochs, warmup_momentum, warmup_bias_lr                                                                                                   |
 | **Optimizer**               | auto (default), SGD, MuSGD, Adam, AdamW, NAdam, RAdam, RMSProp, Adamax                                                                                                             |
-| **Loss Weights**            | box, cls, cls_pw, dfl, pose, kobj, rle, angle, dlog, dgrad, dlam                                                                                                                   |
+| **Loss Weights**            | box, cls, cls_pw, dfl, pose, kobj, rle, kpt_l1, kpt_l2, angle, dlog, dgrad, dlam                                                                                                   |
 | **Color Augmentation**      | hsv_h, hsv_s, hsv_v                                                                                                                                                                |
 | **Geometric Augmentation**  | degrees, translate, scale, shear, perspective                                                                                                                                      |
 | **Flip & Mix Augmentation** | flipud, fliplr, mosaic, mixup, copy_paste, bgr, cutmix, copy_paste_mode, auto_augment, erasing                                                                                     |
@@ -100,7 +100,7 @@ Expand **Advanced Settings** to access the YAML-based parameter editor with 50+ 
 | **Dataset**                 | fraction, freeze, single_cls, rect, multi_scale, resume                                                                                                                            |
 | **Validation**              | max_det                                                                                                                                                                            |
 
-Parameters are task-aware (e.g., `copy_paste` only shows for segment, semantic, and OBB tasks, `pose`/`kobj` only for pose tasks, `auto_augment`/`erasing` only for classify). The editor omits `device`, `cache`, `workers`, `iou`, `dropout`, `val`, and `time`, and ignores them in pasted or dropped configurations; set them in your own `yolo train` command when training locally. A **Modified** badge appears when values differ from defaults, and you can reset all to defaults with the reset button. Only non-default advanced values are sent to the training job (the basic epochs, batch, and image size parameters are always included), so the resulting command stays readable.
+Parameters are task-aware (e.g., `copy_paste` only shows for segment, semantic, and OBB tasks, `pose`/`kobj`/`kpt_l1`/`kpt_l2` only for pose tasks, `auto_augment`/`erasing` only for classify). The editor omits `device`, `cache`, `workers`, `iou`, `dropout`, `val`, and `time`, and ignores them in pasted or dropped configurations; set them in your own `yolo train` command when training locally. A **Modified** badge appears when values differ from defaults, and you can reset all to defaults with the reset button. Only non-default advanced values are sent to the training job (the basic epochs, batch, and image size parameters are always included), so the resulting command stays readable.
 
 ??? example "Example: Tuning Augmentation for Small Datasets"
 
@@ -534,6 +534,8 @@ Before starting a cloud job, the training dialog shows your current credit balan
     | `pose`    | float | 12.0    | 1-50   | Pose loss weight (pose only)                   |
     | `kobj`    | float | 1.0     | 0.5-10 | Keypoint objectness (pose)                     |
     | `rle`     | float | 1.0     | >=0    | RLE keypoint loss weight (pose)                |
+    | `kpt_l1`  | float | 0.0     | >=0    | Pixel L1 keypoint loss weight (pose)           |
+    | `kpt_l2`  | float | 0.0     | >=0    | Pixel L2 keypoint loss weight (pose)           |
     | `angle`   | float | 1.0     | >=0    | Rotation angle loss weight (OBB)               |
     | `dlog`    | float | 1.0     | >=0    | SILog depth loss weight (depth)                |
     | `dgrad`   | float | 0.5     | >=0    | Depth gradient loss weight (depth)             |
@@ -549,7 +551,7 @@ Before starting a cloud job, the training dialog shows your current credit balan
     - **Segment, semantic, and OBB**: `copy_paste`
     - **Depth only**: `dlog`, `dgrad`, `dlam`
     - **Classify only**: `dropout`
-    - **Pose only**: `pose` (loss weight), `kobj` (keypoint objectness), `rle`
+    - **Pose only**: `pose` (loss weight), `kobj` (keypoint objectness), `rle`, `kpt_l1`, `kpt_l2`
     - **OBB only**: `angle`
 
 ## FAQ
