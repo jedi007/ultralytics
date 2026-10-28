@@ -9,7 +9,7 @@ import numpy as np
 
 from ultralytics import YOLO
 
-DEFAULT_MODEL_PATH = "weights/det_instrument_pointer_pose_range_20261023.pt"
+DEFAULT_MODEL_PATH = "weights/det_instrument_pointer_pose_range_20261028.pt"
 DEFAULT_IMAGE_PATH = "test_images/rtsp_record_2026-09-22-14-27-49_000501_0_crop_931-441-1466-973.jpg"
 DEFAULT_OUTPUT_DIR = "runs/det_pointer_pose_demo"
 DEFAULT_CONF = 0.25

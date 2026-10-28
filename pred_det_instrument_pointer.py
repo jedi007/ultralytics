@@ -1,7 +1,5 @@
-from __future__ import annotations
-
-import math
 from pathlib import Path
+import math
 from typing import Any
 
 import cv2
@@ -9,13 +7,12 @@ import numpy as np
 
 from ultralytics import YOLO
 
-DEFAULT_MODEL_PATH = "weights/det_instrument_pointer_pose_range_20261028.pt"
-DEFAULT_IMAGE_PATH = "test_images/rtsp_record_2026-09-22-14-27-49_000501_0_crop_931-441-1466-973.jpg"
-DEFAULT_OUTPUT_DIR = "runs/det_pointer_pose_demo"
+
+DEFAULT_MODEL_PATH = "weights/det_instrument_pointer_20261022.pt"
+DEFAULT_IMAGE_PATH = "test_images/camera_capture_2026-04-24-03-43-31_9305_obj002.jpg"
+DEFAULT_OUTPUT_DIR = "runs/det_pointer_demo"
 DEFAULT_CONF = 0.25
 DEFAULT_GAUGE_CONF = 0.25
-DEFAULT_POINTER_CONF = 0.25
-DEFAULT_KEYPOINT_CONF = 0.2
 DEFAULT_IMGSZ = 512
 DEFAULT_MIN_VALUE = 0.0
 DEFAULT_MAX_VALUE = 100.0
@@ -34,12 +31,14 @@ DEFAULT_FRONT_VIEW_ANCHOR_POINTS = [
 		DEFAULT_FRONT_VIEW_RADIUS * (1.0 + math.sqrt(0.5)),
 	),
 ]
-DEFAULT_POINTER_ALIASES = ("pointer", "needle", "tip")
-DEFAULT_GAUGE_SCALE_POINTS = {
-	"instrument_pointer_5": 5,
-	"instrument_pointer_6": 6,
-	"instrument_pointer_7": 7,
+DEFAULT_CLASS_ALIASES = {
+	"gauge": ("gauge", "instrument", "meter"),
+	"center": ("center", "centre"),
+	"tip": ("tip", "pointer", "needle"),
+	"max": ("max", "maximum"),
+	"min": ("min", "minimum"),
 }
+ROLE_ORDER = ("center", "tip", "min", "max")
 ROLE_COLORS = {
 	"gauge": (255, 0, 255),
 	"center": (0, 255, 0),
@@ -229,41 +228,29 @@ class DetectionGaugeReader:
 		model_path: str | Path = DEFAULT_MODEL_PATH,
 		conf: float = DEFAULT_CONF,
 		gauge_conf: float = DEFAULT_GAUGE_CONF,
-		pointer_conf: float = DEFAULT_POINTER_CONF,
-		keypoint_conf: float = DEFAULT_KEYPOINT_CONF,
 		imgsz: int = DEFAULT_IMGSZ,
 		min_value: float = DEFAULT_MIN_VALUE,
 		max_value: float = DEFAULT_MAX_VALUE,
 		rectify_method: str = DEFAULT_RECTIFY_METHOD,
 		front_view_anchor_points: list[tuple[float, float]] | None = None,
-		pointer_aliases: tuple[str, ...] | None = None,
-		gauge_scale_points: dict[str, int] | None = None,
+		class_aliases: dict[str, tuple[str, ...]] | None = None,
 	) -> None:
 		self.model_path = validate_path(str(model_path), "Model file")
 		self.conf = conf
 		self.gauge_conf = gauge_conf
-		self.pointer_conf = pointer_conf
-		self.keypoint_conf = keypoint_conf
 		self.imgsz = imgsz
 		self.min_value = min_value
 		self.max_value = max_value
 		self.rectify_method = rectify_method
 		self.front_view_anchor_points = front_view_anchor_points or DEFAULT_FRONT_VIEW_ANCHOR_POINTS
-		self.pointer_aliases = pointer_aliases or DEFAULT_POINTER_ALIASES
-		self.gauge_scale_points = gauge_scale_points or DEFAULT_GAUGE_SCALE_POINTS
+		self.class_aliases = class_aliases or DEFAULT_CLASS_ALIASES
 		self.model = YOLO(str(self.model_path))
-		names = self.model.names
-		name_items = names.items() if isinstance(names, dict) else enumerate(names)
-		self.class_scale_points = {}
-		for class_id, name in name_items:
-			scale_points = self.gauge_scale_points.get(str(name))
-			if scale_points is not None:
-				self.class_scale_points[int(class_id)] = int(scale_points)
-		self.pointer_class_ids = _find_class_ids(names, self.pointer_aliases)
-		if not self.class_scale_points:
-			raise ValueError(f"Model is missing gauge classes: {', '.join(self.gauge_scale_points)}; model names: {names}")
-		if not self.pointer_class_ids:
-			raise ValueError(f"Model is missing pointer classes: {', '.join(self.pointer_aliases)}; model names: {names}")
+		self.class_ids = {
+			role: _find_class_ids(self.model.names, aliases) for role, aliases in self.class_aliases.items()
+		}
+		missing_roles = [role for role, ids in self.class_ids.items() if not ids]
+		if missing_roles:
+			raise ValueError(f"Model is missing required classes: {', '.join(missing_roles)}; model names: {self.model.names}")
 		self.last_result: Any | None = None
 		self.last_reading_details: dict[str, Any] | None = None
 
@@ -279,12 +266,6 @@ class DetectionGaugeReader:
 		xyxy_values = result.boxes.xyxy.cpu().tolist()
 		confidence_values = result.boxes.conf.cpu().tolist()
 		class_values = result.boxes.cls.int().cpu().tolist()
-		keypoint_values = None if result.keypoints is None else result.keypoints.xy.cpu().tolist()
-		keypoint_confidence_values = (
-			None
-			if result.keypoints is None or result.keypoints.conf is None
-			else result.keypoints.conf.cpu().tolist()
-		)
 		detections = []
 		for index, (xyxy, confidence, class_id) in enumerate(
 			zip(xyxy_values, confidence_values, class_values)
@@ -298,36 +279,9 @@ class DetectionGaugeReader:
 					"confidence": float(confidence),
 					"class_id": int(class_id),
 					"class_name": str(result.names[int(class_id)]),
-					"keypoints": (
-						[[float(value) for value in point[:2]] for point in keypoint_values[index]]
-						if keypoint_values is not None and index < len(keypoint_values)
-						else []
-					),
-					"keypoint_confidences": (
-						[float(value) for value in keypoint_confidence_values[index]]
-						if keypoint_confidence_values is not None and index < len(keypoint_confidence_values)
-						else []
-					),
 				}
 			)
 		return detections
-
-	def _select_pointer(
-		self,
-		pointer_detections: list[dict[str, Any]],
-		gauge_detection: dict[str, Any],
-		used_pointer_indices: set[int],
-	) -> dict[str, Any] | None:
-		candidates = [
-			detection
-			for detection in pointer_detections
-			if detection["index"] not in used_pointer_indices
-			and detection["confidence"] >= self.pointer_conf
-			and _point_inside_box(detection["center"], gauge_detection["xyxy"], margin_ratio=0.15)
-		]
-		if not candidates:
-			return None
-		return max(candidates, key=lambda detection: detection["confidence"])
 
 	def extract_reading_details(self, result: Any) -> dict[str, Any] | None:
 		detections = self._extract_detections(result)
@@ -337,48 +291,37 @@ class DetectionGaugeReader:
 		gauge_detections = [
 			detection
 			for detection in detections
-			if detection["class_id"] in self.class_scale_points and detection["confidence"] >= self.gauge_conf
+			if detection["class_id"] in self.class_ids["gauge"] and detection["confidence"] >= self.gauge_conf
 		]
 		gauge_detections.sort(key=lambda detection: detection["confidence"], reverse=True)
 		if not gauge_detections:
 			return None
 
-		pointer_detections = [
-			detection for detection in detections if detection["class_id"] in self.pointer_class_ids
-		]
-		used_pointer_indices: set[int] = set()
 		for gauge_index, gauge_detection in enumerate(gauge_detections, start=1):
-			scale_point_count = self.class_scale_points[gauge_detection["class_id"]]
-			required_count = scale_point_count + 1
-			keypoints = gauge_detection["keypoints"]
-			if len(keypoints) < required_count:
-				continue
-			keypoint_confidences = gauge_detection["keypoint_confidences"]
-			if keypoint_confidences:
-				if len(keypoint_confidences) < required_count:
+			candidate_detections = [
+				detection
+				for detection in detections
+				if detection["class_id"] != gauge_detection["class_id"]
+				and _point_inside_box(detection["center"], gauge_detection["xyxy"], margin_ratio=0.15)
+			]
+			selected_detections: dict[str, dict[str, Any]] = {}
+			for role in ROLE_ORDER:
+				role_detections = [
+					detection
+					for detection in candidate_detections
+					if detection["class_id"] in self.class_ids[role]
+				]
+				if not role_detections:
 					continue
-				used_confidences = (
-					keypoint_confidences[0],
-					keypoint_confidences[1],
-					keypoint_confidences[scale_point_count],
-				)
-				if min(used_confidences) < self.keypoint_conf:
-					continue
-			else:
-				keypoint_confidences = [1.0] * required_count
+				selected_detections[role] = max(role_detections, key=lambda detection: detection["confidence"])
 
-			pointer_detection = self._select_pointer(pointer_detections, gauge_detection, used_pointer_indices)
-			if pointer_detection is None:
+			if len(selected_detections) != len(ROLE_ORDER):
 				continue
 
-			center = tuple(float(value) for value in keypoints[0][:2])
-			min_point = tuple(float(value) for value in keypoints[1][:2])
-			max_point = tuple(float(value) for value in keypoints[scale_point_count][:2])
-			pointer_tip = pointer_detection["center"]
-			reading_keypoints = [center, pointer_tip, min_point, max_point]
+			keypoints = [selected_detections[role]["center"] for role in ROLE_ORDER]
 			try:
 				gauge_result = calculate_gauge_reading_with_rectification(
-					reading_keypoints,
+					keypoints,
 					front_view_anchor_points=self.front_view_anchor_points,
 					min_value=self.min_value,
 					max_value=self.max_value,
@@ -387,21 +330,18 @@ class DetectionGaugeReader:
 			except (ValueError, cv2.error):
 				continue
 
-			used_pointer_indices.add(pointer_detection["index"])
 			return {
 				"gauge_index": gauge_index,
 				"confidence": gauge_detection["confidence"],
-				"pointer_confidence": pointer_detection["confidence"],
 				"keypoint_confidences": {
-					"center": keypoint_confidences[0],
-					"pointer": pointer_detection["confidence"],
-					"min": keypoint_confidences[1],
-					"max": keypoint_confidences[scale_point_count],
+					role: selected_detections[role]["confidence"] for role in ROLE_ORDER
 				},
 				"gauge_box": gauge_detection["xyxy"],
-				"pointer_box": pointer_detection["xyxy"],
+				"keypoint_boxes": {
+					role: selected_detections[role]["xyxy"] for role in ROLE_ORDER
+				},
 				"result": result,
-				"keypoints": reading_keypoints,
+				"keypoints": keypoints,
 				**gauge_result,
 			}
 
@@ -438,17 +378,17 @@ def validate_path(path_value: str, description: str) -> Path:
 
 def _draw_reading_details(image: np.ndarray, details: dict[str, Any]) -> np.ndarray:
 	annotated = image.copy()
-	gx1, gy1, gx2, gy2 = (round(value) for value in details["gauge_box"])
-	cv2.rectangle(annotated, (gx1, gy1), (gx2, gy2), ROLE_COLORS["gauge"], 2)
-	px1, py1, px2, py2 = (round(value) for value in details["pointer_box"])
-	cv2.rectangle(annotated, (px1, py1), (px2, py2), ROLE_COLORS["tip"], 2)
+	for role, box in details["keypoint_boxes"].items():
+		x1, y1, x2, y2 = (int(round(value)) for value in box)
+		color = ROLE_COLORS[role]
+		cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+		cx, cy = (int(round(value)) for value in _box_center(box))
+		cv2.circle(annotated, (cx, cy), 3, color, -1)
 
-	center = tuple(round(value) for value in details["keypoints"][0])
-	tip = tuple(round(value) for value in details["keypoints"][1])
-	min_point = tuple(round(value) for value in details["keypoints"][2])
-	max_point = tuple(round(value) for value in details["keypoints"][3])
-	for point, role in ((center, "center"), (min_point, "min"), (max_point, "max"), (tip, "tip")):
-		cv2.circle(annotated, point, 4, ROLE_COLORS[role], -1)
+	center = tuple(int(round(value)) for value in details["keypoints"][0])
+	tip = tuple(int(round(value)) for value in details["keypoints"][1])
+	min_point = tuple(int(round(value)) for value in details["keypoints"][2])
+	max_point = tuple(int(round(value)) for value in details["keypoints"][3])
 	cv2.line(annotated, center, min_point, ROLE_COLORS["min"], 2)
 	cv2.line(annotated, center, max_point, ROLE_COLORS["max"], 2)
 	cv2.line(annotated, center, tip, ROLE_COLORS["tip"], 2)
@@ -487,8 +427,6 @@ def main():
 		model_path=DEFAULT_MODEL_PATH,
 		conf=DEFAULT_CONF,
 		gauge_conf=DEFAULT_GAUGE_CONF,
-		pointer_conf=DEFAULT_POINTER_CONF,
-		keypoint_conf=DEFAULT_KEYPOINT_CONF,
 		imgsz=DEFAULT_IMGSZ,
 		min_value=DEFAULT_MIN_VALUE,
 		max_value=DEFAULT_MAX_VALUE,
@@ -510,8 +448,8 @@ def main():
 
 	if reading_details is None:
 		print(
-			f"No valid gauge reading found. Ensure a gauge class passed gauge_conf={DEFAULT_GAUGE_CONF:.3f}, "
-			f"a pointer box passed pointer_conf={DEFAULT_POINTER_CONF:.3f}, and the pointer box center is inside the gauge box."
+			f"No valid gauge reading found. Ensure class 'gauge' passed gauge_conf={DEFAULT_GAUGE_CONF:.3f} "
+			f"and center, tip/pointer, min and max are detected inside the gauge box."
 		)
 	else:
 		annotated_image = _draw_reading_details(annotated_image, reading_details)
@@ -519,7 +457,6 @@ def main():
 			f"Gauge {reading_details['gauge_index']}: reading={reading_details['reading']:.2f}, "
 			f"percentage={reading_details['percentage']:.2f}%, "
 			f"confidence={reading_details['confidence']:.4f}, "
-			f"pointer_confidence={reading_details['pointer_confidence']:.4f}, "
 			f"ratio={reading_details['ratio']:.4f}, "
 			f"pointer_angle={reading_details['pointer_angle_deg']:.2f} deg, "
 			f"full_scale_angle={reading_details['full_scale_angle_deg']:.2f} deg, "
@@ -539,7 +476,7 @@ def main():
 		return
 
 	try:
-		cv2.imshow("Detection + Pose Gauge Reading Demo", annotated_image)
+		cv2.imshow("Detection Gauge Reading Demo", annotated_image)
 		print("Press any key in the image window to close.")
 		cv2.waitKey(0)
 	except cv2.error as exc:
