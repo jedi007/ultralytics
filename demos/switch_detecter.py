@@ -99,17 +99,22 @@ def _state_from_label(label: str) -> tuple[int, str]:
     return STATE_UNKNOWN, "unknown"
 
 
-def _sort_reading_order(detections: list[dict[str, Any]], row_y_threshold: float) -> list[dict[str, Any]]:
+def _sort_reading_order(
+    detections: list[dict[str, Any]], row_y_threshold: float
+) -> tuple[list[dict[str, Any]], list[list[int]]]:
     """Sort detections left-to-right and top-to-bottom by box top-left coordinates.
 
     Boxes are sorted by their top-left ``y``.  For each new row the smallest
     remaining ``y`` is used as the row anchor, and every remaining box whose
     top-left ``y`` differs from that anchor by less than ``row_y_threshold``
     belongs to the row.  The process repeats for the remaining boxes, then each
-    row is sorted by top-left ``x``.
+    row is sorted by top-left ``x``.  Returns the ordered detections and the
+    top-left ``y`` of every box in each row, in the same order as the output.
     """
-    if len(detections) <= 1:
-        return list(detections)
+    if not detections:
+        return [], []
+    if len(detections) == 1:
+        return list(detections), [[detections[0]["xyxy"][1]]]
 
     rows: list[dict[str, Any]] = []
     for detection in sorted(detections, key=lambda item: (item["xyxy"][1], item["xyxy"][0])):
@@ -119,11 +124,10 @@ def _sort_reading_order(detections: list[dict[str, Any]], row_y_threshold: float
         else:
             rows[-1]["detections"].append(detection)
 
-    return [
-        detection
-        for row in rows
-        for detection in sorted(row["detections"], key=lambda item: (item["xyxy"][0], item["xyxy"][1]))
-    ]
+    ordered_rows = [sorted(row["detections"], key=lambda item: (item["xyxy"][0], item["xyxy"][1])) for row in rows]
+    ordered = [detection for row in ordered_rows for detection in row]
+    row_y_values = [[detection["xyxy"][1] for detection in row] for row in ordered_rows]
+    return ordered, row_y_values
 
 
 class SwitchDetecter:
@@ -190,6 +194,7 @@ class SwitchDetecter:
             "inspection_type": item.get("inspection_type", None),
             "error_msg": error_msg,
             "values": [],
+            "row_y_values": [],
             "instrument_readdata": None,
             "is_capture_only": False,
         }
@@ -289,7 +294,7 @@ class SwitchDetecter:
 
         # Scale the 50 px threshold measured at 1080p to the current image height.
         row_y_threshold = self._image_height(det_result, image) * ROW_Y_THRESHOLD_PER_1080P / 1080.0
-        detections = _sort_reading_order(detections, row_y_threshold)
+        detections, row_y_values = _sort_reading_order(detections, row_y_threshold)
         values = [detection["state"] for detection in detections]
         objs = [
             {
@@ -317,6 +322,7 @@ class SwitchDetecter:
             "xyxy": xyxy,
             "instrument_readdata": None,
             "values": values,
+            "row_y_values": row_y_values,
             "objs": objs,
             "inspection_type": item.get("inspection_type", None),
             "error_msg": "",
@@ -342,6 +348,11 @@ def _print_result(source: str, result: dict[str, Any]) -> None:
             f"state={obj.get('state', 'unknown'):<7} "
             f"bbox={bbox} conf={obj.get('confidence', 0.0):.3f}"
         )
+
+
+def _print_row_y_values(result: dict[str, Any]) -> None:
+    for index, y_values in enumerate(result.get("row_y_values", []), start=1):
+        print(f"  row {index} box y values (x order): {y_values}")
 
 
 def _state_color(state: int) -> tuple[int, int, int]:
@@ -423,11 +434,11 @@ def _collect_images(path: Path) -> list[Path]:
     return sorted(file for file in path.rglob("*") if file.is_file() and file.suffix.lower() in IMAGE_SUFFIXES)
 
 
-def _process_image(path: Path, detector: SwitchDetecter, save_dir: Path, show: bool) -> None:
+def _process_image(path: Path, detector: SwitchDetecter, save_dir: Path, show: bool) -> dict[str, Any] | None:
     image = cv2.imread(str(path))
     if image is None:
         print(f"failed to read image: {path}", file=sys.stderr)
-        return
+        return None
 
     result = detector.detect(image, {"inspection_type": "switch_state"}, "switch")
     _print_result(str(path), result)
@@ -443,6 +454,7 @@ def _process_image(path: Path, detector: SwitchDetecter, save_dir: Path, show: b
         cv2.imshow("SwitchDetecter", vis_image)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
+    return result
 
 
 def _process_stream(source: str, detector: SwitchDetecter, save_dir: Path, show: bool) -> None:
@@ -474,6 +486,7 @@ def _process_stream(source: str, detector: SwitchDetecter, save_dir: Path, show:
             if result["values"] != last_values:
                 last_values = result["values"]
                 _print_result(source, result)
+                _print_row_y_values(result)
 
             vis_image = _draw_result(frame, result)
             if writer is None:
@@ -553,7 +566,9 @@ def main() -> int:
 
     source_path = Path(source).expanduser()
     if source_path.is_file() and source_path.suffix.lower() in IMAGE_SUFFIXES:
-        _process_image(source_path, detector, save_dir, args.show)
+        result = _process_image(source_path, detector, save_dir, args.show)
+        if result is not None:
+            _print_row_y_values(result)
     elif source_path.is_file() and source_path.suffix.lower() in VIDEO_SUFFIXES:
         _process_stream(source, detector, save_dir, args.show)
     elif source_path.is_dir():
@@ -562,7 +577,9 @@ def main() -> int:
             print(f"no images found in: {source_path}", file=sys.stderr)
             return 1
         for image_path in images:
-            _process_image(image_path, detector, save_dir, args.show)
+            result = _process_image(image_path, detector, save_dir, args.show)
+            if result is not None:
+                _print_row_y_values(result)
     else:
         # Let OpenCV handle RTSP/RTMP/HTTP streams and any other video source.
         _process_stream(source, detector, save_dir, args.show)
