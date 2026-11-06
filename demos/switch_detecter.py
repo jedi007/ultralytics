@@ -5,8 +5,9 @@
 
 The detector runs ``weights/det_button_261105.pt`` on a switch cabinet image and
 returns the state of every detected switch / indicator in reading order
-(left-to-right and top-to-bottom).  ``values`` holds one integer per detection
-in that same order:
+(left-to-right and top-to-bottom).  Rows are grouped by box top-left ``y`` with
+a 50-pixel tolerance defined at 1080p and scaled to the input image height.
+``values`` holds one integer per detection in that same order:
 
 * ``1``  - the class name ends with ``-on``
 * ``0``  - the class name ends with ``-off``
@@ -28,7 +29,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable
 
 import cv2
 
@@ -42,7 +43,7 @@ from ultralytics import YOLO
 DEFAULT_WEIGHTS = ROOT / "weights" / "det_button_261105.pt"
 DEFAULT_IMGSZ = (384, 640)
 DEFAULT_CONF = 0.5
-DEFAULT_ROW_OVERLAP = 0.3
+ROW_Y_THRESHOLD_PER_1080P = 50
 STATE_ON = 1
 STATE_OFF = 0
 STATE_UNKNOWN = -1
@@ -98,68 +99,30 @@ def _state_from_label(label: str) -> tuple[int, str]:
     return STATE_UNKNOWN, "unknown"
 
 
-def _vertical_overlap_ratio(box: Sequence[float], row_bounds: Sequence[float]) -> float:
-    """Return the vertical overlap ratio between a box and a row's bounding range."""
-    overlap = min(box[3], row_bounds[3]) - max(box[1], row_bounds[1])
-    if overlap <= 0:
-        return 0.0
-    box_height = max(float(box[3]) - float(box[1]), 1.0)
-    row_height = max(float(row_bounds[3]) - float(row_bounds[1]), 1.0)
-    return overlap / min(box_height, row_height)
+def _sort_reading_order(detections: list[dict[str, Any]], row_y_threshold: float) -> list[dict[str, Any]]:
+    """Sort detections left-to-right and top-to-bottom by box top-left coordinates.
 
-
-def _sort_reading_order(
-    detections: list[dict[str, Any]], row_overlap_ratio: float = DEFAULT_ROW_OVERLAP
-) -> list[dict[str, Any]]:
-    """Sort detections left-to-right and top-to-bottom.
-
-    Boxes whose vertical ranges overlap are treated as one visual row.  This
-    keeps a tall switch and the short indicator lights beside it in the same
-    row, even when their center ``y`` values differ slightly.
+    Boxes are sorted by their top-left ``y``.  For each new row the smallest
+    remaining ``y`` is used as the row anchor, and every remaining box whose
+    top-left ``y`` differs from that anchor by less than ``row_y_threshold``
+    belongs to the row.  The process repeats for the remaining boxes, then each
+    row is sorted by top-left ``x``.
     """
     if len(detections) <= 1:
         return list(detections)
 
     rows: list[dict[str, Any]] = []
-    for detection in sorted(detections, key=lambda item: (item["xyxy"][1], item["xyxy"][0], item["xyxy"][2])):
-        box = detection["xyxy"]
-        best_row: dict[str, Any] | None = None
-        best_ratio = 0.0
-        for row in rows:
-            ratio = _vertical_overlap_ratio(box, row["bounds"])
-            if ratio >= row_overlap_ratio and ratio > best_ratio:
-                best_row = row
-                best_ratio = ratio
+    for detection in sorted(detections, key=lambda item: (item["xyxy"][1], item["xyxy"][0])):
+        y = detection["xyxy"][1]
+        if not rows or y - rows[-1]["anchor_y"] >= row_y_threshold:
+            rows.append({"anchor_y": y, "detections": [detection]})
+        else:
+            rows[-1]["detections"].append(detection)
 
-        if best_row is None:
-            rows.append({"bounds": list(box), "detections": [detection]})
-            continue
-
-        best_row["detections"].append(detection)
-        bounds = best_row["bounds"]
-        best_row["bounds"] = [
-            min(bounds[0], box[0]),
-            min(bounds[1], box[1]),
-            max(bounds[2], box[2]),
-            max(bounds[3], box[3]),
-        ]
-
-    rows.sort(
-        key=lambda row: (
-            (row["bounds"][1] + row["bounds"][3]) / 2.0,
-            (row["bounds"][0] + row["bounds"][2]) / 2.0,
-        )
-    )
     return [
         detection
         for row in rows
-        for detection in sorted(
-            row["detections"],
-            key=lambda item: (
-                (item["xyxy"][0] + item["xyxy"][2]) / 2.0,
-                (item["xyxy"][1] + item["xyxy"][3]) / 2.0,
-            ),
-        )
+        for detection in sorted(row["detections"], key=lambda item: (item["xyxy"][0], item["xyxy"][1]))
     ]
 
 
@@ -191,7 +154,6 @@ class SwitchDetecter:
         else:
             self.imgsz = list(raw_imgsz)
         self.min_obj_size = max(0, _as_int(config.get("min_obj_size"), 0))
-        self.row_overlap_ratio = max(0.0, _as_float(config.get("row_overlap_ratio"), DEFAULT_ROW_OVERLAP))
         self.model = None
         self._load_error = ""
 
@@ -239,6 +201,13 @@ class SwitchDetecter:
         if 0 <= cls_id < len(self.labels):
             return self.labels[cls_id]
         return item_type or "switch"
+
+    @staticmethod
+    def _image_height(det_result: Any, image: Any) -> float:
+        shape = getattr(getattr(det_result, "orig_img", None), "shape", None)
+        if shape is None:
+            shape = getattr(image, "shape", None)
+        return float(shape[0]) if shape is not None and len(shape) >= 1 else 1080.0
 
     def detect(self, image: Any, item: dict[str, Any] | None = None, item_type: str | None = None) -> dict[str, Any]:
         """Detect switches / indicator lights and return states in reading order."""
@@ -318,7 +287,9 @@ class SwitchDetecter:
                 error_msg = "No switch detected."
             return self._empty_result(item, item_type, error_msg)
 
-        detections = _sort_reading_order(detections, self.row_overlap_ratio)
+        # Scale the 50 px threshold measured at 1080p to the current image height.
+        row_y_threshold = self._image_height(det_result, image) * ROW_Y_THRESHOLD_PER_1080P / 1080.0
+        detections = _sort_reading_order(detections, row_y_threshold)
         values = [detection["state"] for detection in detections]
         objs = [
             {
@@ -550,12 +521,6 @@ def _parse_args() -> argparse.Namespace:
         help="inference size as height width (default: 384 640)",
     )
     parser.add_argument("--min-obj-size", type=int, default=0, help="drop boxes smaller than this size in pixels")
-    parser.add_argument(
-        "--row-overlap",
-        type=float,
-        default=DEFAULT_ROW_OVERLAP,
-        help="minimum vertical overlap ratio used to group detections into rows",
-    )
     parser.add_argument("--save-dir", default=str(ROOT / "runs" / "switch_demo"), help="output directory")
     parser.add_argument("--show", action="store_true", help="display results in a window")
     return parser.parse_args()
@@ -572,7 +537,6 @@ def main() -> int:
             "confidence_threshold": args.conf,
             "imgsz": args.imgsz,
             "min_obj_size": args.min_obj_size,
-            "row_overlap_ratio": args.row_overlap,
         }
     )
     if detector.model is None:
