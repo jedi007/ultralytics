@@ -295,6 +295,8 @@ class SwitchDetecter:
         # Scale the 50 px threshold measured at 1080p to the current image height.
         row_y_threshold = self._image_height(det_result, image) * ROW_Y_THRESHOLD_PER_1080P / 1080.0
         detections, row_y_values = _sort_reading_order(detections, row_y_threshold)
+        # values and objs are built from the same ordered detections list, so
+        # values[i] and objs[i] always refer to the same box.
         values = [detection["state"] for detection in detections]
         objs = [
             {
