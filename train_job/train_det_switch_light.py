@@ -19,7 +19,7 @@ if __name__ == '__main__':
         device=0,
         project=str(ROOT / "runs"),   # 绝对路径
         name="switch_light",
-        exist_ok=True,                 # True=复用；False=自动 switch_light2/3
+        exist_ok=False,                 # True=复用；False=自动 switch_light2/3
     )
         
     metrics = model.val(  # 在验证集上评估模型性能
