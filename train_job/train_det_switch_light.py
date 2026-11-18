@@ -7,7 +7,7 @@ if __name__ == '__main__':
     model = YOLO("yolo26n.pt")  # 加载预训练模型（建议用于训练）
 
     # 使用模型
-    model.train(data="train_job/yaml_confs/data_det_switch_light.yaml", epochs=200, batch=32, cfg="train_job/yaml_confs/hyp_det_button.yaml", workers = 4, device=0)  # 训练模型
+    model.train(data="train_job/yaml_confs/data_det_switch_light.yaml", epochs=600, batch=32, cfg="train_job/yaml_confs/hyp_det_switch_light.yaml", workers = 4, device=0)  # 训练模型
     metrics = model.val()  # 在验证集上评估模型性能
 
     model.export(format="onnx", device=0, imgsz=(768, 1280),dynamic=True, simplify=True)
