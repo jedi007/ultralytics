@@ -3,18 +3,24 @@
 
 """Switch / indicator-light state detector demo.
 
-The detector runs ``weights/det_button_261105.pt`` on a switch cabinet image and
-returns the state of every detected switch / indicator in reading order
-(left-to-right and top-to-bottom).  Rows are grouped by box top-left ``y`` with
-a 50-pixel tolerance defined at 1080p and scaled to the input image height.
-``values`` holds one integer per detection in that same order:
+The detector runs ``weights/det_switch_light_261118.pt`` on a switch cabinet
+image and reports every switch / indicator in reading order (left-to-right and
+top-to-bottom).  Rows are grouped by box top-left ``y`` with a 50-pixel
+tolerance defined at 1080p and scaled to the input image height.
 
-* ``1``  - the class name ends with ``-on``
-* ``0``  - the class name ends with ``-off``
-* ``-1`` - the class name has no on/off suffix (for example ``switch2``)
+A switch (``switch1`` ... ``switch6``) owns the ``switch_handle_head`` and
+``switch_handle_tail`` boxes whose centers fall inside its box.  When both are
+found, the angle between the head-to-tail center line and the positive x-axis
+is computed in image coordinates (positive ``y`` points down, range ``0`` to
+``360`` degrees).  ``values`` holds one value per reported object in reading
+order:
 
-For a detector result, ``objs`` is sorted in the same reading order as
-``values``, so ``objs[i]`` corresponds to ``values[i]``.
+* switch - handle angle in degrees, or ``-1`` when head/tail are missing
+* indicator light - ``1`` for ``-on``/``_on``, ``0`` for ``-off``/``_off``, ``-1`` otherwise
+
+Handle boxes are used to compute the switch angle and are not reported as
+separate objects.  For a detector result, ``objs`` is sorted in the same
+reading order as ``values``, so ``objs[i]`` corresponds to ``values[i]``.
 
 Examples:
     python demos/switch_detecter.py
@@ -26,6 +32,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 from pathlib import Path
@@ -40,13 +47,17 @@ if str(ROOT) not in sys.path:
 
 from ultralytics import YOLO
 
-DEFAULT_WEIGHTS = ROOT / "weights" / "det_button_261105.pt"
-DEFAULT_IMGSZ = (384, 640)
+DEFAULT_WEIGHTS = ROOT / "weights" / "det_switch_light_261118.pt"
+DEFAULT_IMGSZ = (768, 1280)  # (height, width) for inference and export
 DEFAULT_CONF = 0.5
 ROW_Y_THRESHOLD_PER_1080P = 50
 STATE_ON = 1
 STATE_OFF = 0
 STATE_UNKNOWN = -1
+SWITCH_LABELS = {f"switch{index}" for index in range(1, 7)}
+HANDLE_HEAD_LABEL = "switch_handle_head"
+HANDLE_TAIL_LABEL = "switch_handle_tail"
+HANDLE_INSIDE_MARGIN = 0.05  # expand the switch box by 5% when looking for handle centers
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
 VIDEO_SUFFIXES = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ts", ".wmv"}
 
@@ -90,13 +101,35 @@ def _normalize_names_map(names_map: Any) -> dict[int, str]:
 
 
 def _state_from_label(label: str) -> tuple[int, str]:
-    """Parse the switch state encoded in a YOLO class name."""
+    """Parse the indicator-light state encoded in a YOLO class name."""
     label_key = label.strip().lower()
-    if label_key.endswith("-on"):
+    if label_key.endswith(("-on", "_on")):
         return STATE_ON, "on"
-    if label_key.endswith("-off"):
+    if label_key.endswith(("-off", "_off")):
         return STATE_OFF, "off"
     return STATE_UNKNOWN, "unknown"
+
+
+def _center_point(xyxy: Iterable[Any]) -> tuple[float, float]:
+    """Return the center of an ``[x1, y1, x2, y2]`` box."""
+    x1, y1, x2, y2 = [float(value) for value in xyxy]
+    return (x1 + x2) / 2.0, (y1 + y2) / 2.0
+
+
+def _point_in_box(point: tuple[float, float], xyxy: Iterable[Any], margin: float = 0.0) -> bool:
+    """Check whether a point lies inside a box, optionally expanded by a size-relative margin."""
+    x1, y1, x2, y2 = [float(value) for value in xyxy]
+    pad_x = (x2 - x1) * margin
+    pad_y = (y2 - y1) * margin
+    return x1 - pad_x <= point[0] <= x2 + pad_x and y1 - pad_y <= point[1] <= y2 + pad_y
+
+
+def _handle_angle(head_xyxy: Iterable[Any], tail_xyxy: Iterable[Any]) -> float:
+    """Return the head-to-tail center line angle from the positive x-axis in degrees."""
+    head_x, head_y = _center_point(head_xyxy)
+    tail_x, tail_y = _center_point(tail_xyxy)
+    angle = round(math.degrees(math.atan2(tail_y - head_y, tail_x - head_x)), 1) % 360.0
+    return 0.0 if angle == 0 else angle
 
 
 def _sort_reading_order(
@@ -214,8 +247,18 @@ class SwitchDetecter:
             shape = getattr(image, "shape", None)
         return float(shape[0]) if shape is not None and len(shape) >= 1 else 1080.0
 
+    @staticmethod
+    def _find_handle(switch: dict[str, Any], handles: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """Return the highest-confidence handle whose center lies inside the switch box."""
+        candidates = [
+            handle
+            for handle in handles
+            if _point_in_box(handle["center"], switch["xyxy"], HANDLE_INSIDE_MARGIN)
+        ]
+        return max(candidates, key=lambda handle: handle["confidence"], default=None)
+
     def detect(self, image: Any, item: dict[str, Any] | None = None, item_type: str | None = None) -> dict[str, Any]:
-        """Detect switches / indicator lights and return states in reading order."""
+        """Detect switches / indicator lights and return states and switch angles in reading order."""
         item = item if isinstance(item, dict) else {}
         item_result = self._empty_result(item, item_type, "")
         if self.model is None:
@@ -254,7 +297,6 @@ class SwitchDetecter:
         names_map = _normalize_names_map(getattr(self.model, "names", None) or getattr(det_result, "names", None))
 
         detections: list[dict[str, Any]] = []
-        skipped_by_size = 0
         for index in range(len(boxes)):
             box = boxes[index]
             try:
@@ -267,10 +309,6 @@ class SwitchDetecter:
             except (AttributeError, IndexError, TypeError, ValueError):
                 continue
 
-            if self.min_obj_size > 0 and (xywh[2] < self.min_obj_size or xywh[3] < self.min_obj_size):
-                skipped_by_size += 1
-                continue
-
             label_name = self._label_name(names_map, cls_id, item_type)
             state, state_name = _state_from_label(label_name)
             detections.append(
@@ -279,13 +317,46 @@ class SwitchDetecter:
                     "confidence": confidence,
                     "xywh": xywh,
                     "xyxy": xyxy,
+                    "center": _center_point(xyxy),
                     "label": label_name,
                     "state": state,
                     "state_name": state_name,
                 }
             )
 
-        if not detections:
+        handle_heads = [detection for detection in detections if detection["label"] == HANDLE_HEAD_LABEL]
+        handle_tails = [detection for detection in detections if detection["label"] == HANDLE_TAIL_LABEL]
+        skipped_by_size = 0
+        reportable: list[dict[str, Any]] = []
+        for detection in detections:
+            # Handle boxes are consumed by their switch and are never reported
+            # separately, so min_obj_size must not drop them.
+            if detection["label"] in (HANDLE_HEAD_LABEL, HANDLE_TAIL_LABEL):
+                continue
+            if self.min_obj_size > 0 and (
+                detection["xywh"][2] < self.min_obj_size or detection["xywh"][3] < self.min_obj_size
+            ):
+                skipped_by_size += 1
+                continue
+            reportable.append(detection)
+
+        for detection in reportable:
+            if detection["label"] not in SWITCH_LABELS:
+                continue
+            head = self._find_handle(detection, handle_heads)
+            tail = self._find_handle(detection, handle_tails)
+            angle = _handle_angle(head["xyxy"], tail["xyxy"]) if head is not None and tail is not None else None
+            detection.update(
+                {
+                    "angle": angle,
+                    "state": angle if angle is not None else STATE_UNKNOWN,
+                    "state_name": f"{angle:.1f}deg" if angle is not None else "unknown",
+                    "head_center": list(head["center"]) if head is not None else None,
+                    "tail_center": list(tail["center"]) if tail is not None else None,
+                }
+            )
+
+        if not reportable:
             if skipped_by_size > 0:
                 error_msg = f"No switch detected: all candidates below min_obj_size={self.min_obj_size}px."
             else:
@@ -294,22 +365,30 @@ class SwitchDetecter:
 
         # Scale the 50 px threshold measured at 1080p to the current image height.
         row_y_threshold = self._image_height(det_result, image) * ROW_Y_THRESHOLD_PER_1080P / 1080.0
-        detections, row_y_values = _sort_reading_order(detections, row_y_threshold)
+        detections, row_y_values = _sort_reading_order(reportable, row_y_threshold)
         # values and objs are built from the same ordered detections list, so
         # values[i] and objs[i] always refer to the same box.
         values = [detection["state"] for detection in detections]
-        objs = [
-            {
+        objs = []
+        for detection in detections:
+            obj = {
                 "confidence": detection["confidence"],
                 "bbox": detection["xywh"],
                 "label": detection["label"],
                 "state": detection["state_name"],
             }
-            for detection in detections
-        ]
+            if detection["label"] in SWITCH_LABELS:
+                obj.update(
+                    {
+                        "angle": detection["angle"],
+                        "head_center": detection["head_center"],
+                        "tail_center": detection["tail_center"],
+                    }
+                )
+            objs.append(obj)
 
-        # The result describes the whole switch box, so its bbox is the union of
-        # all detected components while objs keeps each component separately.
+        # The result describes the whole reported area, so its bbox is the union
+        # of all reported objects while objs keeps each object separately.
         xyxy = [
             min(detection["xyxy"][0] for detection in detections),
             min(detection["xyxy"][1] for detection in detections),
@@ -365,6 +444,12 @@ def _state_color(state: int) -> tuple[int, int, int]:
     return 0, 215, 255
 
 
+def _object_color(obj: dict[str, Any], state: Any) -> tuple[int, int, int]:
+    if obj.get("label") in SWITCH_LABELS:
+        return (0, 165, 255) if state != STATE_UNKNOWN else (0, 215, 255)
+    return _state_color(state)
+
+
 def _draw_result(image: Any, result: dict[str, Any]) -> Any:
     vis_image = image.copy()
     values = result.get("values", [])
@@ -382,8 +467,19 @@ def _draw_result(image: Any, result: dict[str, Any]) -> Any:
             continue
 
         state = values[index] if index < len(values) else STATE_UNKNOWN
-        color = _state_color(state)
+        color = _object_color(obj, state)
         cv2.rectangle(vis_image, (x, y), (x + box_width, y + box_height), color, thickness)
+
+        # Draw the head-to-tail line that defines the switch angle.
+        head_center = obj.get("head_center")
+        tail_center = obj.get("tail_center")
+        if head_center and tail_center:
+            head_point = tuple(int(round(value)) for value in head_center)
+            tail_point = tuple(int(round(value)) for value in tail_center)
+            cv2.line(vis_image, head_point, tail_point, color, thickness)
+            radius = max(3, thickness * 2)
+            cv2.circle(vis_image, head_point, radius, (0, 255, 0), -1)
+            cv2.circle(vis_image, tail_point, radius, (0, 0, 255), -1)
 
         # Draw only the reading-order index on the image; the full label and
         # state are printed to the console to keep dense switch boxes readable.
@@ -476,7 +572,7 @@ def _process_stream(source: str, detector: SwitchDetecter, save_dir: Path, show:
     output_name = "webcam_switch.mp4" if source.isdigit() else f"{Path(source).stem}_switch.mp4"
     output_path = save_dir / output_name
     writer: cv2.VideoWriter | None = None
-    last_values: list[int] | None = None
+    last_values: list[Any] | None = None
 
     try:
         while True:
@@ -533,7 +629,7 @@ def _parse_args() -> argparse.Namespace:
         nargs=2,
         default=list(DEFAULT_IMGSZ),
         metavar=("H", "W"),
-        help="inference size as height width (default: 384 640)",
+        help="inference size as height width (default: 768 1280)",
     )
     parser.add_argument("--min-obj-size", type=int, default=0, help="drop boxes smaller than this size in pixels")
     parser.add_argument("--save-dir", default=str(ROOT / "runs" / "switch_demo"), help="output directory")
